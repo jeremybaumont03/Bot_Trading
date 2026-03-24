@@ -20,11 +20,11 @@ jobs:
     steps:
       # 1. Récupère tout le code + portfolio.json existant
       - name: Checkout du code
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
 
       # 2. Installe Python
       - name: Installation Python 3.11
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v5.4.0
         with:
           python-version: '3.11'
 
