@@ -1,0 +1,47 @@
+name: Trading Bot 22h15
+
+on:
+  schedule:
+    # 21h15 UTC = 22h15 Paris heure d'été
+    # En heure d'hiver (oct-mars) : change 21 en 21 (UTC+1, même chose)
+    - cron: '15 21 * * 1-5'
+
+  # Lancement manuel depuis GitHub (pour tester)
+  workflow_dispatch:
+
+jobs:
+  run-bot:
+    runs-on: ubuntu-latest
+
+    # Permission d'écrire dans le repository (pour sauvegarder portfolio.json)
+    permissions:
+      contents: write
+
+    steps:
+      # 1. Récupère tout le code + portfolio.json existant
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      # 2. Installe Python
+      - name: Installation Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # 3. Installe les librairies
+      - name: Installation des dépendances
+        run: pip install yfinance pandas numpy scikit-learn
+
+      # 4. Lance le bot
+      - name: Lancement du bot
+        run: python entraineur.py
+
+      # 5. ✅ Sauvegarde portfolio.json dans le repository
+      #    Permanent — visible depuis GitHub sur ton téléphone
+      - name: Sauvegarder le portfolio dans le repository
+        run: |
+          git config --global user.name "Trading Bot"
+          git config --global user.email "bot@trading.local"
+          git add portfolio.json
+          git diff --staged --quiet || git commit -m "📊 Portfolio mis à jour - $(date '+%d/%m/%Y %H:%M')"
+          git push
