@@ -47,7 +47,7 @@ jobs:
         run: python entraineur_aggressive.py
 
       # 5. Sauvegarde tous les portfolios dans le repository
-        - name: Sauvegarder tous les portfolios
+      - name: Sauvegarder tous les portfolios
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
