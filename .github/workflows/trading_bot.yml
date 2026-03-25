@@ -51,6 +51,6 @@ jobs:
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
-          git add portfolio_rf.json portfolio_lr.json portfolio_gb.json portfolio_conservative.json portfolio_aggressive.json
+          git add portfolio.json portfolio_lr.json portfolio_gb.json portfolio_conservative.json portfolio_aggressive.json
           git diff --staged --quiet || git commit -m "📊 Mise à jour multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
           git push
