@@ -5,16 +5,12 @@ on:
     # 21h15 UTC = 22h15 Paris heure d'été
     # En heure d'hiver (oct-mars) : change 21 en 21 (UTC+1, même chose)
     - cron: '15 21 * * 1-5'
-
   # Lancement manuel depuis GitHub (pour tester)
   workflow_dispatch:
 
 jobs:
   run-bot:
     runs-on: ubuntu-latest
-    env:
-      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true  
-      
     # Permission d'écrire dans le repository (pour sauvegarder portfolio.json)
     permissions:
       contents: write
@@ -22,28 +18,39 @@ jobs:
     steps:
       # 1. Récupère tout le code + portfolio.json existant
       - name: Checkout du code
-        uses: actions/checkout@v4.2.2
+        uses: actions/checkout@v4
 
       # 2. Installe Python
       - name: Installation Python 3.11
-        uses: actions/setup-python@v5.4.0
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       # 3. Installe les librairies
       - name: Installation des dépendances
-        run: pip install yfinance pandas numpy scikit-learn
+        run: pip install -r requirements.txt
 
-      # 4. Lance le bot
-      - name: Lancement du bot
+      # 4. Lance tous les bots
+      - name: Bot original - Random Forest Normal
         run: python entraineur.py
 
-      # 5. ✅ Sauvegarde portfolio.json dans le repository
-      #    Permanent — visible depuis GitHub sur ton téléphone
-      - name: Sauvegarder le portfolio dans le repository
+      - name: Bot 2 - Logistic Regression
+        run: python entraineur_lr.py
+
+      - name: Bot 3 - Gradient Boosting
+        run: python entraineur_gb.py
+
+      - name: Bot 4 - RF Conservative
+        run: python entraineur_conservative.py
+
+      - name: Bot 5 - RF Aggressive
+        run: python entraineur_aggressive.py
+
+      # 5. Sauvegarde tous les portfolios dans le repository
+      - name: Sauvegarder les portfolios dans le repository
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
-          git add portfolio.json
-          git diff --staged --quiet || git commit -m "📊 Portfolio mis à jour - $(date '+%d/%m/%Y %H:%M')"
+          git add portfolio.json portfolio_lr.json portfolio_gb.json portfolio_conservative.json portfolio_aggressive.json
+          git diff --staged --quiet || git commit -m "📊 Portfolios mis à jour - $(date '+%d/%m/%Y %H:%M')"
           git push
