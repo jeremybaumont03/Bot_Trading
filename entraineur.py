@@ -18,7 +18,7 @@ from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
-TICKERS          = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT"]
+TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
 CAPITAL_DEPART   = 1000.0
 FRAIS            = 0.001       # 0.1% par trade
 SLIPPAGE         = 0.0005      # 0.05% slippage
@@ -349,4 +349,4 @@ if __name__ == "__main__":
     sauvegarder_portfolio(portfolio)
 
     print(f"\n✅ Sauvegardé dans '{FICHIER}'")
-    print("   Lance ce script chaque soir après 17h30\n")
+    print("   Lance ce script chaque soir\n")
