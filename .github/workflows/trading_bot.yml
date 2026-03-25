@@ -47,10 +47,10 @@ jobs:
         run: python entraineur_aggressive.py
 
       # 5. Sauvegarde tous les portfolios dans le repository
-      - name: Sauvegarder les portfolios dans le repository
+        - name: Sauvegarder tous les portfolios
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
-          git add portfolio.json portfolio_lr.json portfolio_gb.json portfolio_conservative.json portfolio_aggressive.json
-          git diff --staged --quiet || git commit -m "📊 Portfolios mis à jour - $(date '+%d/%m/%Y %H:%M')"
+          git add portfolio_rf.json portfolio_lr.json portfolio_gb.json portfolio_conservative.json portfolio_aggressive.json
+          git diff --staged --quiet || git commit -m "📊 Mise à jour multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
           git push
