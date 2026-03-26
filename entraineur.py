@@ -361,5 +361,12 @@ if __name__ == "__main__":
     portfolio            = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
 
+      # À la fin de ton script, après avoir sauvegardé le portfolio :
+    val_fin = calculer_valeur_totale(port)
+    if msg: # Si le bot a fait des achats/ventes
+        envoyer_alerte_telegram(f"🚀 *Mouvements du jour :*\n\n{msg}\n💰 Valeur Portefeuille : {val_fin}€")
+    else: # Si le bot est resté en cash
+        envoyer_alerte_telegram(f"😴 *Scan terminé* : Aucun mouvement.\n💰 Valeur Portefeuille : {val_fin}€")
+  
     print(f"\n✅ Sauvegardé dans '{FICHIER}'")
     print("   Lance ce script chaque soir\n")
