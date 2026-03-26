@@ -17,6 +17,9 @@ import shutil
 from datetime import datetime
 from sklearn.ensemble import GradientBoostingClassifier
 
+TOKEN_TELEGRAM = "8785477175:AAEr0ZRwisATAy-rSAOeCRaNT89Cy47VkBQ"
+CHAT_ID_TELEGRAM = "8722431787"
+
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
 CAPITAL_DEPART   = 1000.0
@@ -43,6 +46,14 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FICHIER  = os.path.join(BASE_DIR, "portfolio_gb.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
+def envoyer_alerte_telegram(message):
+    url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
+    try:
+        requests.post(url, data=payload, timeout=10)
+    except Exception as e:
+        print(f"⚠️ Erreur Telegram : {e}")
+      
 # ── LA FONCTION DE SAUVEGARDE ──
 def faire_backup():
     """
@@ -347,6 +358,11 @@ if __name__ == "__main__":
     portfolio, trades    = executer_trades(portfolio)
     portfolio            = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
-
+    # À la fin de ton script, après avoir sauvegardé le portfolio :
+    val_fin = calculer_valeur_totale(port)
+    if msg: # Si le bot a fait des achats/ventes
+        envoyer_alerte_telegram(f"🚀 *Mouvements du jour :*\n\n{msg}\n💰 Valeur Portefeuille : {val_fin}€")
+    else: # Si le bot est resté en cash
+        envoyer_alerte_telegram(f"😴 *Scan terminé* : Aucun mouvement.\n💰 Valeur Portefeuille : {val_fin}€")
     print(f"\n✅ Sauvegardé dans '{FICHIER}'")
     print("   Lance ce script chaque soir\n")
