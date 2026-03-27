@@ -6,6 +6,7 @@ Améliorations vs V1 :
   - Maximum 3 positions simultanées
   - Sauvegarde automatique (backup quotidien)
   - Log de performance : Sharpe + Drawdown
+  - Alertes Telegram
 """
 
 import yfinance as yf
@@ -14,80 +15,75 @@ import numpy as np
 import json
 import os
 import shutil
+import requests
 from datetime import datetime
+# ✅ CORRECTION DU MOTEUR : Importation du vrai Gradient Boosting
 from sklearn.ensemble import GradientBoostingClassifier
+
 # ── CONFIGURATION TELEGRAM (SÉCURISÉE) ────────────────────────────────────────
-# On récupère les clés depuis les Secrets GitHub pour ne pas les afficher en clair
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
-TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
+TICKERS          = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
 CAPITAL_DEPART   = 1000.0
 FRAIS            = 0.001       # 0.1% par trade
 SLIPPAGE         = 0.0005      # 0.05% slippage
 VOL_TARGET       = 0.15        # cible volatilité annualisée
 
-# ✅ SEUIL FIXE — plus de percentile qui change chaque jour
+# ✅ SEUIL FIXE
 SEUIL_IA_FIXE    = 0.55        # l'IA doit être sûre à 55% minimum
 
-# ✅ STOP LOSS — vendre automatiquement si perte > 8%
+# ✅ STOP LOSS
 STOP_LOSS        = -0.08
 
-# ✅ MAX POSITIONS — jamais plus de 3 actifs en même temps
+# ✅ MAX POSITIONS
 MAX_POSITIONS    = 3
 
 TARGET_HAUSSE    = 0.02        # cible : +2% en 10 jours
 FICHIER          = "portfolio_gb.json"
 DOSSIER_BACKUP   = "backups"
 
-# ── CONFIGURATION DES CHEMINS (Indispensable pour la fonction) ──
-# Cela récupère le dossier où se trouve ton fichier .py actuel
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FICHIER  = os.path.join(BASE_DIR, "portfolio_gb.json")
+# ── CONFIGURATION DES CHEMINS ──
+BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
+FICHIER        = os.path.join(BASE_DIR, "portfolio_gb.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
 # ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
     if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
-        print("ℹ️ Telegram non configuré (Secrets absents) — Envoi annulé")
+        print("ℹ️ Telegram non configuré — alerte ignorée")
         return
-    url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
     try:
+        url     = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
+        payload = {
+            "chat_id"    : CHAT_ID_TELEGRAM,
+            "text"       : message,
+            "parse_mode" : "Markdown"
+        }
         requests.post(url, data=payload, timeout=10)
+        print("📱 Alerte Telegram envoyée")
     except Exception as e:
         print(f"⚠️ Erreur Telegram : {e}")
-      
+
 # ── LA FONCTION DE SAUVEGARDE ──
 def faire_backup():
-    """
-    Copie portfolio.json dans un dossier backups/ avec la date du jour.
-    Cela permet de ne jamais perdre ton historique de trading.
-    """
-    # 1. On vérifie si le fichier portfolio existe déjà
     if not os.path.exists(FICHIER):
-        return  # Si pas de fichier, on ne peut pas faire de copie
-
+        return  
     try:
-        # 2. On crée le dossier 'backups' s'il n'existe pas encore
         os.makedirs(DOSSIER_BACKUP, exist_ok=True)
+        date_str   = datetime.now().strftime("%Y-%m-%d")
+        nom_backup = f"portfolio_gb_{date_str}.json"
+        dest       = os.path.join(DOSSIER_BACKUP, nom_backup)
 
-        # 3. On prépare le nom du fichier avec la date (ex: portfolio_2026-03-24.json)
-        date_str = datetime.now().strftime("%Y-%m-%d")
-        nom_backup = f"portfolio_{date_str}.json"
-        dest = os.path.join(DOSSIER_BACKUP, nom_backup)
-
-        # 4. On ne fait la copie que si elle n'existe pas déjà pour aujourd'hui
         if not os.path.exists(dest):
             shutil.copy2(FICHIER, dest)
             print(f"💾 Backup sauvegardé avec succès : {nom_backup}")
         else:
             print(f"ℹ️ Backup déjà à jour pour aujourd'hui ({date_str}).")
-
     except Exception as e:
         print(f"⚠️ Erreur lors du backup : {e}")
-        
+
 # ── PORTFOLIO ─────────────────────────────────────────────────────────────────
 def charger_portfolio():
     if os.path.exists(FICHIER):
@@ -110,10 +106,6 @@ def sauvegarder_portfolio(portfolio):
 
 # ── SIGNAL ────────────────────────────────────────────────────────────────────
 def calculer_signal(ticker):
-    """
-    Retourne (signal_bool, proba, allocation, prix_actuel)
-    Utilise un SEUIL FIXE — stable d'un jour à l'autre.
-    """
     try:
         df = yf.download(ticker, period="6y", interval="1d", progress=False)
         if isinstance(df.columns, pd.MultiIndex):
@@ -132,6 +124,7 @@ def calculer_signal(ticker):
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
         split    = int(len(df) * 0.85)
 
+        # ✅ CORRECTION DU MOTEUR : On utilise bien le Gradient Boosting
         model = GradientBoostingClassifier(n_estimators=100, max_depth=3, random_state=42)
         model.fit(df[features].iloc[:split], df['Target'].iloc[:split])
 
@@ -140,13 +133,12 @@ def calculer_signal(ticker):
 
         trend_ok = float(last['Close'])   > float(last['MA200'])
         mom_ok   = float(last['Mom_20j']) > 1.00
-        # ✅ seuil fixe — cohérent d'un jour à l'autre
         ia_ok    = proba > SEUIL_IA_FIXE
 
-        signal   = trend_ok and mom_ok and ia_ok
-        vol_ann  = float(last['Volatility']) * np.sqrt(252)
-        alloc    = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
-        prix     = float(last['Close'])
+        signal  = trend_ok and mom_ok and ia_ok
+        vol_ann = float(last['Volatility']) * np.sqrt(252)
+        alloc   = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
+        prix    = float(last['Close'])
 
         return signal, round(proba, 4), round(alloc, 4), round(prix, 4)
 
@@ -167,33 +159,27 @@ def calculer_valeur_totale(portfolio):
 
 # ── MÉTRIQUES DE PERFORMANCE ──────────────────────────────────────────────────
 def calculer_metriques(portfolio):
-    """
-    Calcule Sharpe Ratio et Max Drawdown depuis l'historique de valeur.
-    Ces deux métriques te disent si le bot est réellement bon ou juste chanceux.
-    """
     historique = portfolio.get('valeur_historique', [])
     if len(historique) < 5:
         return None, None
 
-    valeurs  = [h['valeur'] for h in historique]
-    series   = pd.Series(valeurs)
+    valeurs    = [h['valeur'] for h in historique]
+    series     = pd.Series(valeurs)
     rendements = series.pct_change().dropna()
 
-    # Sharpe : rendement moyen / volatilité (annualisé sur 252 jours)
     if rendements.std() > 0:
         sharpe = rendements.mean() / rendements.std() * np.sqrt(252)
     else:
         sharpe = 0.0
 
-    # Max Drawdown : pire perte depuis un sommet
-    cumul      = (1 + rendements).cumprod()
-    max_dd     = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+    cumul  = (1 + rendements).cumprod()
+    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min()
 
     return round(sharpe, 3), round(max_dd, 4)
 
 # ── TRADES ────────────────────────────────────────────────────────────────────
 def executer_trades(portfolio):
-    aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
+    aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
     print(f"\n📅 Analyse du {aujourd_hui}")
@@ -208,23 +194,16 @@ def executer_trades(portfolio):
         action_str       = "⚪ CASH"
         detail           = ""
 
-        # ── VÉRIFICATION STOP LOSS (priorité absolue) ──────────────────────
         if position_ouverte:
             pos     = portfolio['positions'][ticker]
             pnl_pct = (prix - pos['prix_achat']) / pos['prix_achat']
-
-            # ✅ Stop loss : vendre si perte > STOP_LOSS (ex : -8%)
             if pnl_pct < STOP_LOSS:
-                signal = False   # forcer la vente
+                signal = False   
 
-        # ── CAS 1 : ACHAT ──────────────────────────────────────────────────
         if signal and not position_ouverte:
-
-            # ✅ Limite du nombre de positions
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
                 detail     = f"({MAX_POSITIONS} positions max)"
-
             else:
                 mise        = portfolio['capital_cash'] * allocation
                 frais_achat = mise * (FRAIS + SLIPPAGE)
@@ -253,7 +232,6 @@ def executer_trades(portfolio):
                     action_str = "🟢 ACHETÉ"
                     detail     = f"{mise:.0f}€ @ {prix:.2f}"
 
-        # ── CAS 2 : VENTE (signal rouge OU stop loss) ──────────────────────
         elif not signal and position_ouverte:
             pos          = portfolio['positions'][ticker]
             valeur_vente = pos['quantite'] * prix
@@ -263,7 +241,6 @@ def executer_trades(portfolio):
             pnl_pct_reel = (pnl / pos['mise']) * 100
             duree        = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
 
-            # Savoir si c'est un stop loss ou un signal normal
             raison = "STOP LOSS" if pnl_pct_reel < STOP_LOSS * 100 else "SIGNAL"
 
             portfolio['capital_cash'] += valeur_nette
@@ -289,7 +266,6 @@ def executer_trades(portfolio):
             action_str = f"{emoji} VENDU ({raison})"
             detail     = f"PnL: {pnl:+.0f}€ ({pnl_pct_reel:+.1f}%)"
 
-        # ── CAS 3 : EN POSITION ────────────────────────────────────────────
         elif signal and position_ouverte:
             pos        = portfolio['positions'][ticker]
             pnl_latent = (prix - pos['prix_achat']) / pos['prix_achat'] * 100
@@ -312,14 +288,12 @@ def afficher_resume(portfolio):
         "valeur": valeur_totale
     })
 
-    # Stats trades fermés
     trades_fermes   = [t for t in portfolio['historique'] if t['action'] == 'VENTE']
     nb_trades       = len(trades_fermes)
     wins            = [t for t in portfolio['historique'] if t.get('pnl', 0) > 0]
     stop_losses     = [t for t in trades_fermes if t.get('raison') == 'STOP LOSS']
     win_rate        = len(wins) / nb_trades * 100 if nb_trades > 0 else 0
 
-    # Métriques avancées
     sharpe, max_dd  = calculer_metriques(portfolio)
 
     print("\n" + "═" * 75)
@@ -365,14 +339,13 @@ if __name__ == "__main__":
     sauvegarder_portfolio(portfolio)
     
     # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
-    # On construit le message ici
     if trades:
         lignes = []
         for t in trades:
             if t['action'] == 'ACHAT':
                 lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — Mise : {t['mise']:.0f}€")
             elif t['action'] == 'VENTE':
-                lignes.append(f"🔴 VENTE {t['ticker']} @ {t['prix']:.2f} — PnL : {t.get('pnl', 0):+.0f}€ ({t['raison']})")
+                lignes.append(f"🔴 VENTE {t['ticker']} @ {t['prix']:.2f} — PnL : {t.get('pnl', 0):+.0f}€ ({t.get('raison', '')})")
         
         msg = "\n".join(lignes)
         envoyer_alerte_telegram(f"🚀 *Mouvements — Gradient Boosting*\n\n{msg}\n\n💰 Valeur : {val_fin:.2f}€")
