@@ -17,9 +17,10 @@ import shutil
 from datetime import datetime
 from sklearn.linear_model import LogisticRegression
 
-TOKEN_TELEGRAM = "8785477175:AAEr0ZRwisATAy-rSAOeCRaNT89Cy47VkBQ"
-CHAT_ID_TELEGRAM = "8722431787"
-
+# ── CONFIGURATION TELEGRAM (SÉCURISÉE) ────────────────────────────────────────
+# ✅ SÉCURITÉ : Lecture depuis les Secrets GitHub pour l'automatisation
+TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
+CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
 CAPITAL_DEPART   = 1000.0
@@ -46,14 +47,19 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FICHIER  = os.path.join(BASE_DIR, "portfolio_lr.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
+# ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
+    # Sécurité anti-crash si lancé en local sans secrets
+    if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
+        print("ℹ️ Telegram ignoré (Tokens non configurés).")
+        return
+        
     url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
     payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
     try:
         requests.post(url, data=payload, timeout=10)
     except Exception as e:
         print(f"⚠️ Erreur Telegram : {e}")
-      
 # ── LA FONCTION DE SAUVEGARDE ──
 def faire_backup():
     """
@@ -349,22 +355,27 @@ def afficher_resume(portfolio):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT PAPER TRADING V2")
-    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Stop loss : {STOP_LOSS:.0%} | Max positions : {MAX_POSITIONS}\n")
-
+    print("🤖 BOT LOGISTIC REGRESSION V2")
+    
     faire_backup()
-    portfolio            = charger_portfolio()
-    portfolio, trades    = executer_trades(portfolio)
-    portfolio            = afficher_resume(portfolio)
+    portfolio = charger_portfolio()
+    portfolio, trades = executer_trades(portfolio)
+    portfolio = afficher_resume(portfolio)
+    
+    val_fin = calculer_valeur_totale(portfolio)
     sauvegarder_portfolio(portfolio)
 
-      # À la fin de ton script, après avoir sauvegardé le portfolio :
-    val_fin = calculer_valeur_totale(port)
-    if msg: # Si le bot a fait des achats/ventes
-        envoyer_alerte_telegram(f"🚀 *Mouvements du jour :*\n\n{msg}\n💰 Valeur Portefeuille : {val_fin}€")
-    else: # Si le bot est resté en cash
-        envoyer_alerte_telegram(f"😴 *Scan terminé* : Aucun mouvement.\n💰 Valeur Portefeuille : {val_fin}€")
-      
-    print(f"\n✅ Sauvegardé dans '{FICHIER}'")
-    print("   Lance ce script chaque soir\n")
+    # ✅ CORRECTION TELEGRAM : Génération propre du message
+    if trades:
+        lignes = []
+        for t in trades:
+            emoji = "🟢" if t['action'] == 'ACHAT' else "🔴"
+            info = f"Mise: {t['mise']}€" if t['action'] == 'ACHAT' else f"PnL: {t['pnl']}€ ({t['raison']})"
+            lignes.append(f"{emoji} {t['action']} {t['ticker']} @ {t['prix']:.2f}€ | {info}")
+        
+        msg = "\n".join(lignes)
+        envoyer_alerte_telegram(f"🚀 *Mouvements — Logistic Regression*\n\n{msg}\n\n💰 Valeur : {val_fin:.2f}€")
+    else:
+        envoyer_alerte_telegram(f"😴 *Scan terminé — Logistic Regression*\nAucun mouvement aujourd'hui.\n💰 Valeur : {val_fin:.2f}€")
+
+    print(f"\n✅ Sauvegardé dans portfolio_lr.json")
