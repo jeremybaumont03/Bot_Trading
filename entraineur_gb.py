@@ -16,9 +16,10 @@ import os
 import shutil
 from datetime import datetime
 from sklearn.ensemble import GradientBoostingClassifier
-
-TOKEN_TELEGRAM = "8785477175:AAEr0ZRwisATAy-rSAOeCRaNT89Cy47VkBQ"
-CHAT_ID_TELEGRAM = "8722431787"
+# ── CONFIGURATION TELEGRAM (SÉCURISÉE) ────────────────────────────────────────
+# On récupère les clés depuis les Secrets GitHub pour ne pas les afficher en clair
+TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
+CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
@@ -46,7 +47,11 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FICHIER  = os.path.join(BASE_DIR, "portfolio_gb.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
+# ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
+    if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
+        print("ℹ️ Telegram non configuré (Secrets absents) — Envoi annulé")
+        return
     url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
     payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
     try:
@@ -349,20 +354,29 @@ def afficher_resume(portfolio):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT PAPER TRADING V2")
-    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Stop loss : {STOP_LOSS:.0%} | Max positions : {MAX_POSITIONS}\n")
-
+    print("🤖 BOT GRADIENT BOOSTING V2")
+    
     faire_backup()
-    portfolio            = charger_portfolio()
-    portfolio, trades    = executer_trades(portfolio)
-    portfolio            = afficher_resume(portfolio)
+    portfolio = charger_portfolio()
+    portfolio, trades = executer_trades(portfolio)
+    
+    val_fin = calculer_valeur_totale(portfolio)
+    portfolio['valeur_historique'].append({"date": datetime.now().strftime("%Y-%m-%d"), "valeur": val_fin})
     sauvegarder_portfolio(portfolio)
-    # À la fin de ton script, après avoir sauvegardé le portfolio :
-    val_fin = calculer_valeur_totale(port)
-    if msg: # Si le bot a fait des achats/ventes
-        envoyer_alerte_telegram(f"🚀 *Mouvements du jour :*\n\n{msg}\n💰 Valeur Portefeuille : {val_fin}€")
-    else: # Si le bot est resté en cash
-        envoyer_alerte_telegram(f"😴 *Scan terminé* : Aucun mouvement.\n💰 Valeur Portefeuille : {val_fin}€")
-    print(f"\n✅ Sauvegardé dans '{FICHIER}'")
-    print("   Lance ce script chaque soir\n")
+    
+    # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
+    # On construit le message ici
+    if trades:
+        lignes = []
+        for t in trades:
+            if t['action'] == 'ACHAT':
+                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — Mise : {t['mise']:.0f}€")
+            elif t['action'] == 'VENTE':
+                lignes.append(f"🔴 VENTE {t['ticker']} @ {t['prix']:.2f} — PnL : {t.get('pnl', 0):+.0f}€ ({t['raison']})")
+        
+        msg = "\n".join(lignes)
+        envoyer_alerte_telegram(f"🚀 *Mouvements — Gradient Boosting*\n\n{msg}\n\n💰 Valeur : {val_fin:.2f}€")
+    else:
+        envoyer_alerte_telegram(f"😴 *Scan terminé — Gradient Boosting*\nAucun mouvement.\n💰 Valeur : {val_fin:.2f}€")
+
+    print(f"\n✅ Sauvegardé dans portfolio_gb.json")
