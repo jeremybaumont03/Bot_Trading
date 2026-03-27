@@ -6,6 +6,7 @@ Améliorations vs V1 :
   - Maximum 3 positions simultanées
   - Sauvegarde automatique (backup quotidien)
   - Log de performance : Sharpe + Drawdown
+  - Alertes Telegram
 """
 
 import yfinance as yf
@@ -14,15 +15,17 @@ import numpy as np
 import json
 import os
 import shutil
+import requests
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
-TOKEN_TELEGRAM = "8785477175:AAEr0ZRwisATAy-rSAOeCRaNT89Cy47VkBQ"
-CHAT_ID_TELEGRAM = "8722431787"
+# Les vraies valeurs sont dans les GitHub Secrets — jamais dans le code
+TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
+CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
-TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
+TICKERS          = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
 CAPITAL_DEPART   = 1000.0
 FRAIS            = 0.001       # 0.1% par trade
 SLIPPAGE         = 0.0005      # 0.05% slippage
@@ -43,19 +46,31 @@ DOSSIER_BACKUP   = "backups"
 
 # ── CONFIGURATION DES CHEMINS (Indispensable pour la fonction) ──
 # Cela récupère le dossier où se trouve ton fichier .py actuel
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FICHIER  = os.path.join(BASE_DIR, "portfolio.json")
+BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
+FICHIER        = os.path.join(BASE_DIR, "portfolio.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
-# ── FONCTIONS SYSTÈME ─────────────────────────────────────────────────────────
+# ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
-    url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
+    """
+    Envoie un message sur Telegram.
+    Si le token n'est pas configuré, on ignore silencieusement.
+    """
+    if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
+        print("ℹ️ Telegram non configuré — alerte ignorée")
+        return
     try:
+        url     = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
+        payload = {
+            "chat_id"    : CHAT_ID_TELEGRAM,
+            "text"       : message,
+            "parse_mode" : "Markdown"
+        }
         requests.post(url, data=payload, timeout=10)
+        print("📱 Alerte Telegram envoyée")
     except Exception as e:
         print(f"⚠️ Erreur Telegram : {e}")
-      
+
 # ── LA FONCTION DE SAUVEGARDE ──
 def faire_backup():
     """
@@ -71,9 +86,9 @@ def faire_backup():
         os.makedirs(DOSSIER_BACKUP, exist_ok=True)
 
         # 3. On prépare le nom du fichier avec la date (ex: portfolio_2026-03-24.json)
-        date_str = datetime.now().strftime("%Y-%m-%d")
+        date_str   = datetime.now().strftime("%Y-%m-%d")
         nom_backup = f"portfolio_{date_str}.json"
-        dest = os.path.join(DOSSIER_BACKUP, nom_backup)
+        dest       = os.path.join(DOSSIER_BACKUP, nom_backup)
 
         # 4. On ne fait la copie que si elle n'existe pas déjà pour aujourd'hui
         if not os.path.exists(dest):
@@ -84,7 +99,7 @@ def faire_backup():
 
     except Exception as e:
         print(f"⚠️ Erreur lors du backup : {e}")
-        
+
 # ── PORTFOLIO ─────────────────────────────────────────────────────────────────
 def charger_portfolio():
     if os.path.exists(FICHIER):
@@ -140,10 +155,10 @@ def calculer_signal(ticker):
         # ✅ seuil fixe — cohérent d'un jour à l'autre
         ia_ok    = proba > SEUIL_IA_FIXE
 
-        signal   = trend_ok and mom_ok and ia_ok
-        vol_ann  = float(last['Volatility']) * np.sqrt(252)
-        alloc    = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
-        prix     = float(last['Close'])
+        signal  = trend_ok and mom_ok and ia_ok
+        vol_ann = float(last['Volatility']) * np.sqrt(252)
+        alloc   = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
+        prix    = float(last['Close'])
 
         return signal, round(proba, 4), round(alloc, 4), round(prix, 4)
 
@@ -172,8 +187,8 @@ def calculer_metriques(portfolio):
     if len(historique) < 5:
         return None, None
 
-    valeurs  = [h['valeur'] for h in historique]
-    series   = pd.Series(valeurs)
+    valeurs    = [h['valeur'] for h in historique]
+    series     = pd.Series(valeurs)
     rendements = series.pct_change().dropna()
 
     # Sharpe : rendement moyen / volatilité (annualisé sur 252 jours)
@@ -183,14 +198,14 @@ def calculer_metriques(portfolio):
         sharpe = 0.0
 
     # Max Drawdown : pire perte depuis un sommet
-    cumul      = (1 + rendements).cumprod()
-    max_dd     = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+    cumul  = (1 + rendements).cumprod()
+    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min()
 
     return round(sharpe, 3), round(max_dd, 4)
 
 # ── TRADES ────────────────────────────────────────────────────────────────────
 def executer_trades(portfolio):
-    aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
+    aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
     print(f"\n📅 Analyse du {aujourd_hui}")
@@ -310,14 +325,14 @@ def afficher_resume(portfolio):
     })
 
     # Stats trades fermés
-    trades_fermes   = [t for t in portfolio['historique'] if t['action'] == 'VENTE']
-    nb_trades       = len(trades_fermes)
-    wins            = [t for t in trades_fermes if t.get('pnl', 0) > 0]
-    stop_losses     = [t for t in trades_fermes if t.get('raison') == 'STOP LOSS']
-    win_rate        = len(wins) / nb_trades * 100 if nb_trades > 0 else 0
+    trades_fermes = [t for t in portfolio['historique'] if t['action'] == 'VENTE']
+    nb_trades     = len(trades_fermes)
+    wins          = [t for t in trades_fermes if t.get('pnl', 0) > 0]
+    stop_losses   = [t for t in trades_fermes if t.get('raison') == 'STOP LOSS']
+    win_rate      = len(wins) / nb_trades * 100 if nb_trades > 0 else 0
 
     # Métriques avancées
-    sharpe, max_dd  = calculer_metriques(portfolio)
+    sharpe, max_dd = calculer_metriques(portfolio)
 
     print("\n" + "═" * 75)
     print(f"💼 RÉSUMÉ — {aujourd_hui}")
@@ -356,17 +371,29 @@ if __name__ == "__main__":
     print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Stop loss : {STOP_LOSS:.0%} | Max positions : {MAX_POSITIONS}\n")
 
     faire_backup()
-    portfolio            = charger_portfolio()
-    portfolio, trades    = executer_trades(portfolio)
-    portfolio            = afficher_resume(portfolio)
+    portfolio         = charger_portfolio()
+    portfolio, trades = executer_trades(portfolio)
+    portfolio         = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
 
-      # À la fin de ton script, après avoir sauvegardé le portfolio :
-    val_fin = calculer_valeur_totale(port)
-    if msg: # Si le bot a fait des achats/ventes
-        envoyer_alerte_telegram(f"🚀 *Mouvements du jour :*\n\n{msg}\n💰 Valeur Portefeuille : {val_fin}€")
-    else: # Si le bot est resté en cash
-        envoyer_alerte_telegram(f"😴 *Scan terminé* : Aucun mouvement.\n💰 Valeur Portefeuille : {val_fin}€")
-  
+    # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
+    val_fin = calculer_valeur_totale(portfolio)
+
+    if trades:
+        lignes = []
+        for t in trades:
+            if t['action'] == 'ACHAT':
+                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — Mise : {t['mise']:.0f}€")
+            elif t['action'] == 'VENTE':
+                lignes.append(f"🔴 VENTE {t['ticker']} @ {t['prix']:.2f} — PnL : {t.get('pnl', 0):+.0f}€")
+        msg = "\n".join(lignes)
+        envoyer_alerte_telegram(
+            f"🚀 *Mouvements du jour — RF Normal*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€"
+        )
+    else:
+        envoyer_alerte_telegram(
+            f"😴 *Scan terminé — RF Normal*\nAucun mouvement aujourd'hui\n💰 Portfolio : {val_fin:.2f}€"
+        )
+
     print(f"\n✅ Sauvegardé dans '{FICHIER}'")
     print("   Lance ce script chaque soir\n")
