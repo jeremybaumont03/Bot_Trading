@@ -2,7 +2,7 @@ name: Trading Bot Multi-Stratégies
 
 on:
   schedule:
-    # 21h15 UTC = 22h15 Paris
+    # 21h15 UTC = 23h15 Paris (Heure d'été CEST)
     - cron: '15 21 * * 1-5'
   workflow_dispatch:
 
@@ -24,8 +24,6 @@ jobs:
       - name: Installation des dépendances
         run: pip install -r requirements.txt
 
-      # --- C'EST ICI QUE ÇA CHANGE ---
-      # On ajoute 'env' pour que Python puisse lire tes secrets
       - name: Lancement des 5 Bots
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
@@ -41,7 +39,6 @@ jobs:
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
-          # On ajoute tous les fichiers JSON pour ne rien perdre
           git add *.json
           git diff --staged --quiet || git commit -m "📊 MAJ Multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
           git push
