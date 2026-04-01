@@ -24,18 +24,18 @@ jobs:
       - name: Installation des dépendances
         run: pip install -r requirements.txt
 
-      - name: Lancement des 5 Bots
+      - name: Lancement des 6 Bots
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: |
-          python entraineur.py
-          python entraineur_lr.py
-          python entraineur_gb.py
-          python entraineur_conservative.py
-          python entraineur_aggressive.py
-          python entraineur_mr.py
-
+          python entraineur.py || true
+          python entraineur_lr.py || true
+          python entraineur_gb.py || true
+          python entraineur_conservative.py || true
+          python entraineur_aggressive.py || true
+          python entraineur_mr.py || true
+          
       - name: Sauvegarder tous les portfolios
         run: |
           git config --global user.name "Trading Bot"
