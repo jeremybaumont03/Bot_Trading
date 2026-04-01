@@ -34,6 +34,7 @@ jobs:
           python entraineur_gb.py
           python entraineur_conservative.py
           python entraineur_aggressive.py
+          python entraineur_mr.py
 
       - name: Sauvegarder tous les portfolios
         run: |
