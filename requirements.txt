@@ -4,4 +4,4 @@ numpy
 scikit-learn
 plotly
 schedule
-request
+requests
