@@ -1,11 +1,10 @@
 """
-BOT DE PAPER TRADING — V2
-Améliorations vs V1 :
-  - Seuil IA fixe (plus de percentile instable)
-  - Stop loss à -8%
+BOT DE PAPER TRADING — V2 CONSERVATEUR
+Améliorations :
+  - Univers étendu : 31 Tickers (pour trouver les rares setups parfaits)
+  - Ultra Conservateur : Seuil IA fixe à 65% et Stop Loss serré à -5%
+  - Shadow Logging : Enregistre les probabilités IA même en cash
   - Maximum 3 positions simultanées
-  - Sauvegarde automatique (backup quotidien)
-  - Log de performance : Sharpe + Drawdown
 """
 
 import yfinance as yf
@@ -19,38 +18,50 @@ from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
-# ✅ SÉCURITÉ MAXIMUM : Les codes sont cachés et lus depuis GitHub Secrets !
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
-TICKERS = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
+TICKERS = [
+    # Mega-Cap Tech
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "NFLX",
+    # Semiconductors
+    "AMD", "INTC", "TSM", "QCOM",
+    # Finance
+    "JPM", "V", "BAC", "GS",
+    # Consumer & Industrial
+    "WMT", "JNJ", "PG", "HD", "DIS",
+    # Crypto
+    "BTC-USD", "ETH-USD",
+    # ETFs
+    "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
+]
+
 CAPITAL_DEPART   = 1000.0
 FRAIS            = 0.001       # 0.1% par trade
 SLIPPAGE         = 0.0005      # 0.05% slippage
 VOL_TARGET       = 0.15        # cible volatilité annualisée
 
-# ✅ SEUIL FIXE — plus de percentile qui change chaque jour
-SEUIL_IA_FIXE    = 0.65        # l'IA doit être sûre à 65% minimum (Conservateur)
+# ✅ SEUIL FIXE CONSERVATEUR — l'IA doit être sûre à 65% minimum
+SEUIL_IA_FIXE    = 0.65        
 
-# ✅ STOP LOSS — vendre automatiquement si perte > 5% (Conservateur)
+# ✅ STOP LOSS SERRÉ — vendre automatiquement si perte > 5%
 STOP_LOSS        = -0.05
 
 # ✅ MAX POSITIONS — jamais plus de 3 actifs en même temps
 MAX_POSITIONS    = 3
-
 TARGET_HAUSSE    = 0.03        # cible : +3% en 10 jours
+
 FICHIER          = "portfolio_conservative.json"
 DOSSIER_BACKUP   = "backups"
 
-# ── CONFIGURATION DES CHEMINS (Indispensable pour la fonction) ──
+# ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FICHIER  = os.path.join(BASE_DIR, "portfolio_conservative.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
 # ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
-    # Sécurité anti-crash si tu le lances en local sans les secrets
     if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
         print("ℹ️ Telegram ignoré en mode local (pas de tokens configurés).")
         return
@@ -62,7 +73,7 @@ def envoyer_alerte_telegram(message):
     except Exception as e:
         print(f"⚠️ Erreur Telegram : {e}")
         
-# ── LA FONCTION DE SAUVEGARDE ──
+# ── LA FONCTION DE SAUVEGARDE ─────────────────────────────────────────────────
 def faire_backup():
     if not os.path.exists(FICHIER):
         return  
@@ -92,7 +103,8 @@ def charger_portfolio():
         "capital_cash"     : CAPITAL_DEPART,
         "positions"        : {},
         "historique"       : [],
-        "valeur_historique": []
+        "valeur_historique": [],
+        "logs_journaliers" : [] # ✅ AJOUT DU SHADOW LOGGING
     }
     sauvegarder_portfolio(portfolio)
     print(f"✅ Nouveau portfolio créé avec {CAPITAL_DEPART}€ virtuels")
@@ -179,8 +191,11 @@ def executer_trades(portfolio):
     aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
+    if 'logs_journaliers' not in portfolio:
+        portfolio['logs_journaliers'] = []
+
     print(f"\n📅 Analyse du {aujourd_hui}")
-    print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS}")
+    print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
     print("─" * 75)
     print(f"{'ACTIF':<10} {'SIGNAL':<10} {'IA%':<7} {'ACTION':<18} {'DÉTAIL'}")
     print("─" * 75)
@@ -190,6 +205,15 @@ def executer_trades(portfolio):
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
+
+        # ── SHADOW LOGGING ───────────────────────────────────────────────────
+        portfolio['logs_journaliers'].append({
+            "date"          : aujourd_hui,
+            "ticker"        : ticker,
+            "proba_ia"      : proba,
+            "signal_valide" : bool(signal)
+        })
+        portfolio['logs_journaliers'] = portfolio['logs_journaliers'][-1000:]
 
         if position_ouverte:
             pos     = portfolio['positions'][ticker]
@@ -302,6 +326,7 @@ def afficher_resume(portfolio):
     print(f"  Cash disponible     : {portfolio['capital_cash']:.2f} €")
     print(f"  Positions ouvertes  : {len(portfolio['positions'])} / {MAX_POSITIONS}")
     print(f"  Trades fermés       : {nb_trades} (dont {len(stop_losses)} stop loss)")
+    print(f"  Logs journaliers    : {len(portfolio.get('logs_journaliers', []))} entrées")
     print(f"  Win rate            : {win_rate:.0f}%")
 
     if sharpe is not None:
@@ -325,7 +350,7 @@ def afficher_resume(portfolio):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT PAPER TRADING V2 - CONSERVATEUR")
+    print("🤖 BOT PAPER TRADING V2 - CONSERVATEUR (31 Tickers)")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Stop loss : {STOP_LOSS:.0%} | Max positions : {MAX_POSITIONS}\n")
 
@@ -336,10 +361,8 @@ if __name__ == "__main__":
     sauvegarder_portfolio(portfolio)
     
     # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
-    # ✅ CORRECTION : Remplacement de "port" par "portfolio"
     val_fin = calculer_valeur_totale(portfolio)
 
-    # ✅ CORRECTION : Construction de la variable "msg" en fonction des trades du jour
     if trades:
         lignes = []
         for t in trades:
@@ -349,7 +372,7 @@ if __name__ == "__main__":
                 lignes.append(f"🔴 VENTE {t['ticker']} @ {t['prix']:.2f} — PnL : {t.get('pnl', 0):+.0f}€")
         
         msg = "\n".join(lignes)
-        envoyer_alerte_telegram(f"🚀 *Mouvements du jour — RF Conservateur*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"🛡️ *Mouvements du jour — RF Conservateur*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
     else:
         envoyer_alerte_telegram(f"😴 *Scan terminé — RF Conservateur*\nAucun mouvement aujourd'hui\n💰 Portfolio : {val_fin:.2f}€")
 
