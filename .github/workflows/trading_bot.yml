@@ -36,10 +36,11 @@ jobs:
           python entraineur_aggressive.py || true
           python entraineur_mr.py || true
           
-      - name: Sauvegarder tous les portfolios
+      - name: Sauvegarder tous les portfolios et backups
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
-          git add *.json
+          # Ajoute les JSON à la racine ET le dossier backups/ s'il existe
+          git add *.json backups/ || true
           git diff --staged --quiet || git commit -m "📊 MAJ Multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
           git push
