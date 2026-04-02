@@ -1,12 +1,10 @@
 """
-BOT DE PAPER TRADING — V2
-Améliorations vs V1 :
-  - Seuil IA fixe (plus de percentile instable)
-  - Stop loss à -8%
-  - Maximum 3 positions simultanées
-  - Sauvegarde automatique (backup quotidien)
-  - Log de performance : Sharpe + Drawdown
-  - Alertes Telegram
+BOT DE PAPER TRADING — V2 GRADIENT BOOSTING (Optimisé Quant)
+Améliorations :
+  - Univers étendu : 31 Tickers
+  - Confiance pure en l'IA : Suppression des filtres MA200/Momentum
+  - Seuil réaliste (51%) et Target réaliste (1%)
+  - Shadow Logging (Logs des probas IA)
 """
 
 import yfinance as yf
@@ -17,30 +15,39 @@ import os
 import shutil
 import requests
 from datetime import datetime
-# ✅ CORRECTION DU MOTEUR : Importation du vrai Gradient Boosting
 from sklearn.ensemble import GradientBoostingClassifier
 
-# ── CONFIGURATION TELEGRAM (SÉCURISÉE) ────────────────────────────────────────
+# ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
-TICKERS          = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
+TICKERS = [
+    # Mega-Cap Tech
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "NFLX",
+    # Semiconductors
+    "AMD", "INTC", "TSM", "QCOM",
+    # Finance
+    "JPM", "V", "BAC", "GS",
+    # Consumer & Industrial
+    "WMT", "JNJ", "PG", "HD", "DIS",
+    # Crypto
+    "BTC-USD", "ETH-USD",
+    # ETFs
+    "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
+]
+
 CAPITAL_DEPART   = 1000.0
 FRAIS            = 0.001       # 0.1% par trade
 SLIPPAGE         = 0.0005      # 0.05% slippage
 VOL_TARGET       = 0.15        # cible volatilité annualisée
 
-# ✅ SEUIL FIXE
-SEUIL_IA_FIXE    = 0.55        # l'IA doit être sûre à 55% minimum
-
-# ✅ STOP LOSS
-STOP_LOSS        = -0.08
-
-# ✅ MAX POSITIONS
+# ✅ PARAMÈTRES "VRAI QUANT"
+SEUIL_IA_FIXE    = 0.51        # Si l'IA voit 51% de chances de gain, on y va
+TARGET_HAUSSE    = 0.01        # Cible réaliste d'entraînement : +1% en 10 jours
+STOP_LOSS        = -0.08       # Stop loss à 8%
 MAX_POSITIONS    = 3
 
-TARGET_HAUSSE    = 0.02        # cible : +2% en 10 jours
 FICHIER          = "portfolio_gb.json"
 DOSSIER_BACKUP   = "backups"
 
@@ -94,7 +101,8 @@ def charger_portfolio():
         "capital_cash"     : CAPITAL_DEPART,
         "positions"        : {},
         "historique"       : [],
-        "valeur_historique": []
+        "valeur_historique": [],
+        "logs_journaliers" : [] # ✅ AJOUT DU SHADOW LOGGING
     }
     sauvegarder_portfolio(portfolio)
     print(f"✅ Nouveau portfolio créé avec {CAPITAL_DEPART}€ virtuels")
@@ -124,18 +132,15 @@ def calculer_signal(ticker):
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
         split    = int(len(df) * 0.85)
 
-        # ✅ CORRECTION DU MOTEUR : On utilise bien le Gradient Boosting
+        # Entraînement du Gradient Boosting
         model = GradientBoostingClassifier(n_estimators=100, max_depth=3, random_state=42)
         model.fit(df[features].iloc[:split], df['Target'].iloc[:split])
 
         last  = df.iloc[-1]
         proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
 
-        trend_ok = float(last['Close'])   > float(last['MA200'])
-        mom_ok   = float(last['Mom_20j']) > 1.00
-        ia_ok    = proba > SEUIL_IA_FIXE
-
-        signal  = trend_ok and mom_ok and ia_ok
+        # ✅ CONFIANCE PURE EN L'IA : On retire les filtres bloquants (MA200, Mom)
+        signal  = proba > SEUIL_IA_FIXE
         vol_ann = float(last['Volatility']) * np.sqrt(252)
         alloc   = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
         prix    = float(last['Close'])
@@ -182,8 +187,11 @@ def executer_trades(portfolio):
     aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
+    if 'logs_journaliers' not in portfolio:
+        portfolio['logs_journaliers'] = []
+
     print(f"\n📅 Analyse du {aujourd_hui}")
-    print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS}")
+    print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
     print("─" * 75)
     print(f"{'ACTIF':<10} {'SIGNAL':<10} {'IA%':<7} {'ACTION':<18} {'DÉTAIL'}")
     print("─" * 75)
@@ -193,6 +201,15 @@ def executer_trades(portfolio):
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
+
+        # ── SHADOW LOGGING ───────────────────────────────────────────────────
+        portfolio['logs_journaliers'].append({
+            "date"          : aujourd_hui,
+            "ticker"        : ticker,
+            "proba_ia"      : proba,
+            "signal_valide" : bool(signal)
+        })
+        portfolio['logs_journaliers'] = portfolio['logs_journaliers'][-1000:]
 
         if position_ouverte:
             pos     = portfolio['positions'][ticker]
@@ -305,6 +322,7 @@ def afficher_resume(portfolio):
     print(f"  Cash disponible     : {portfolio['capital_cash']:.2f} €")
     print(f"  Positions ouvertes  : {len(portfolio['positions'])} / {MAX_POSITIONS}")
     print(f"  Trades fermés       : {nb_trades} (dont {len(stop_losses)} stop loss)")
+    print(f"  Logs journaliers    : {len(portfolio.get('logs_journaliers', []))} entrées")
     print(f"  Win rate            : {win_rate:.0f}%")
 
     if sharpe is not None:
@@ -328,15 +346,19 @@ def afficher_resume(portfolio):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT GRADIENT BOOSTING V2")
+    print("🤖 BOT GRADIENT BOOSTING V2 (31 Tickers)")
+    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Stop loss : {STOP_LOSS:.0%} | Max positions : {MAX_POSITIONS}\n")
     
     faire_backup()
-    portfolio = charger_portfolio()
+    portfolio         = charger_portfolio()
     portfolio, trades = executer_trades(portfolio)
     
-    val_fin = calculer_valeur_totale(portfolio)
-    portfolio['valeur_historique'].append({"date": datetime.now().strftime("%Y-%m-%d"), "valeur": val_fin})
+    # ✅ L'APPEL MANQUANT DU RÉSUMÉ EST BIEN LÀ !
+    portfolio         = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
+    
+    val_fin = calculer_valeur_totale(portfolio)
     
     # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
     if trades:
