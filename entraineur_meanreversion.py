@@ -1,8 +1,10 @@
 """
-BOT CANARY — entraineur_mr_canary.py
-But : générer de l'activité et vérifier que toute l'infrastructure fonctionne.
-Règles volontairement plus souples que le bot MR Elite.
-RSI < 45 au lieu de 30 — trade presque tous les jours.
+BOT MEAN REVERSION — entraineur_mr.py (VERSION V3 ÉLITE)
+Améliorations : 
+  - Univers étendu : 31 Tickers
+  - Time Stop (10j), TP dynamique (vol*2), Distance MA20
+  - Filtre SPY retiré — trade les excès purs
+  - Shadow Logging : Enregistre le RSI et la distance MA20 chaque jour
 """
 
 import yfinance as yf
@@ -34,25 +36,26 @@ TICKERS = [
     "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
 ]
 
-CAPITAL_DEPART = 1000.0
-FRAIS          = 0.001
-SLIPPAGE       = 0.0005
+CAPITAL_DEPART   = 1000.0
+FRAIS            = 0.001
+SLIPPAGE         = 0.0005
 
-# ── PARAMÈTRES CANARY (volontairement souples) ────────────────────────────────
+# ── PARAMÈTRES MEAN REVERSION (ÉLITE) ─────────────────────────────────────────
 RSI_PERIOD       = 7
-RSI_SEUIL_ACHAT  = 45        # Souples — achète les légers dips
-TAKE_PROFIT_BASE = 0.02      # +2% — sortie rapide
-TAKE_PROFIT_MAX  = 0.05      # +5% max
-STOP_LOSS        = -0.08     # -8% — plus de marge
-MAX_DUREE        = 7         # Time stop 7 jours
+RSI_SEUIL_ACHAT  = 30
+TAKE_PROFIT_BASE = 0.04      # Minimum +4%
+TAKE_PROFIT_MAX  = 0.08      # Maximum +8%
+STOP_LOSS        = -0.05     # -5%
+MAX_DUREE        = 10        # Time stop : sort après 10 jours
 MAX_POSITIONS    = 3
-MISE_PAR_TRADE   = 0.15      # 15% du capital
+MISE_PAR_TRADE   = 0.20      # 20% du capital cash disponible
 
-FICHIER        = "portfolio_mr_canary.json"
+FICHIER        = "portfolio_mr.json"
 DOSSIER_BACKUP = "backups"
 
+# ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
-FICHIER        = os.path.join(BASE_DIR, "portfolio_mr_canary.json")
+FICHIER        = os.path.join(BASE_DIR, "portfolio_mr.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
@@ -75,15 +78,15 @@ def faire_backup():
     try:
         os.makedirs(DOSSIER_BACKUP, exist_ok=True)
         date_str   = datetime.now().strftime("%Y-%m-%d")
-        nom_backup = f"portfolio_mr_canary_{date_str}.json"
+        nom_backup = f"portfolio_mr_{date_str}.json"
         dest       = os.path.join(DOSSIER_BACKUP, nom_backup)
         if not os.path.exists(dest):
             shutil.copy2(FICHIER, dest)
-            print(f"💾 Backup sauvegardé : {nom_backup}")
+            print(f"💾 Backup sauvegardé avec succès : {nom_backup}")
         else:
-            print(f"ℹ️ Backup déjà à jour ({date_str}).")
+            print(f"ℹ️ Backup déjà à jour pour aujourd'hui ({date_str}).")
     except Exception as e:
-        print(f"⚠️ Erreur backup : {e}")
+        print(f"⚠️ Erreur lors du backup : {e}")
 
 # ── PORTFOLIO ─────────────────────────────────────────────────────────────────
 def charger_portfolio():
@@ -96,10 +99,10 @@ def charger_portfolio():
         "positions"        : {},
         "historique"       : [],
         "valeur_historique": [],
-        "logs_journaliers" : []
+        "logs_journaliers" : [] # ✅ SHADOW LOGGING
     }
     sauvegarder_portfolio(portfolio)
-    print(f"✅ Nouveau portfolio Canary créé avec {CAPITAL_DEPART}€ virtuels")
+    print(f"✅ Nouveau portfolio Mean Reversion créé avec {CAPITAL_DEPART}€ virtuels")
     return portfolio
 
 def sauvegarder_portfolio(portfolio):
@@ -114,8 +117,8 @@ def calculer_rsi(series, period=14):
     rs    = gain / loss
     return 100 - (100 / (1 + rs))
 
-# ── SIGNAL ────────────────────────────────────────────────────────────────────
-def calculer_signal(ticker):
+# ── SIGNAL MEAN REVERSION ─────────────────────────────────────────────────────
+def calculer_signal_mr(ticker):
     try:
         df = yf.download(ticker, period="1y", interval="1d", progress=False)
         if isinstance(df.columns, pd.MultiIndex):
@@ -127,15 +130,18 @@ def calculer_signal(ticker):
         df['MA20'] = df['Close'].rolling(20).mean()
         df = df.dropna()
 
-        last        = df.iloc[-1]
-        rsi         = float(last['RSI'])
-        prix        = float(last['Close'])
-        ma20        = float(last['MA20'])
-        vol         = float(df['Close'].pct_change().tail(20).std())
-        distance_ma = prix / ma20
+        last = df.iloc[-1]
+        rsi  = float(last['RSI'])
+        prix = float(last['Close'])
+        ma20 = float(last['MA20'])
+        vol  = float(df['Close'].pct_change().tail(20).std())
 
-        # Canary : règles souples — RSI < 45 suffit
-        signal = rsi < RSI_SEUIL_ACHAT
+        # Distance MA20 : le prix doit être > 3% sous sa moyenne
+        distance_ma     = prix / ma20
+        cassure_validee = distance_ma < 0.97
+
+        # Signal final (Filtre SPY retiré)
+        signal = (rsi < RSI_SEUIL_ACHAT) and cassure_validee
 
         return signal, round(rsi, 2), round(prix, 4), round(vol, 4), round(distance_ma, 4)
 
@@ -154,16 +160,23 @@ def calculer_valeur_totale(portfolio):
             valeur += pos['mise']
     return round(valeur, 2)
 
-# ── MÉTRIQUES ─────────────────────────────────────────────────────────────────
+# ── MÉTRIQUES DE PERFORMANCE ──────────────────────────────────────────────────
 def calculer_metriques(portfolio):
     historique = portfolio.get('valeur_historique', [])
     if len(historique) < 5:
         return None, None
+
     valeurs    = [h['valeur'] for h in historique]
     rendements = pd.Series(valeurs).pct_change().dropna()
-    sharpe     = rendements.mean() / rendements.std() * np.sqrt(252) if rendements.std() > 0 else 0.0
-    cumul      = (1 + rendements).cumprod()
-    max_dd     = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+
+    if rendements.std() > 0:
+        sharpe = rendements.mean() / rendements.std() * np.sqrt(252)
+    else:
+        sharpe = 0.0
+
+    cumul  = (1 + rendements).cumprod()
+    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+
     return round(sharpe, 3), round(max_dd, 4)
 
 # ── TRADES ────────────────────────────────────────────────────────────────────
@@ -174,19 +187,19 @@ def executer_trades(portfolio):
     if 'logs_journaliers' not in portfolio:
         portfolio['logs_journaliers'] = []
 
-    print(f"\n📅 Analyse du {aujourd_hui} — Canary Bot (RSI < {RSI_SEUIL_ACHAT})")
-    print(f"   Positions : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers : {len(TICKERS)}")
+    print(f"\n📅 Analyse du {aujourd_hui} — Mean Reversion RSI (Élite V3)")
+    print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
     print("─" * 80)
-    print(f"{'ACTIF':<10} {'RSI':<8} {'SIGNAL':<10} {'ACTION':<22} {'DÉTAIL'}")
+    print(f"{'ACTIF':<10} {'RSI':<8} {'SIGNAL':<12} {'ACTION':<22} {'DÉTAIL'}")
     print("─" * 80)
 
     for ticker in TICKERS:
-        signal, rsi, prix, vol, distance_ma = calculer_signal(ticker)
+        signal, rsi, prix, vol, distance_ma = calculer_signal_mr(ticker)
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
 
-        # ── SHADOW LOGGING — enregistre même en cash ──────────────────────
+        # ── SHADOW LOGGING ───────────────────────────────────────────────────
         portfolio['logs_journaliers'].append({
             "date"          : aujourd_hui,
             "ticker"        : ticker,
@@ -194,10 +207,9 @@ def executer_trades(portfolio):
             "distance_ma20" : distance_ma,
             "signal_valide" : bool(signal)
         })
-        # Garde seulement les 1000 derniers logs
         portfolio['logs_journaliers'] = portfolio['logs_journaliers'][-1000:]
 
-        # ── TP / SL / TIME STOP ───────────────────────────────────────────
+        # ── VÉRIFICATION TP / SL / TIME STOP ──────────────────────────────
         if position_ouverte:
             pos         = portfolio['positions'][ticker]
             rendement   = (prix - pos['prix_achat']) / pos['prix_achat']
@@ -210,15 +222,24 @@ def executer_trades(portfolio):
                 pnl_net     = pnl - frais_vente
                 portfolio['capital_cash'] += pos['mise'] + pnl_net
 
-                if rendement >= tp_cible:   raison, emoji = "TAKE PROFIT", "✅"
-                elif rendement <= STOP_LOSS: raison, emoji = "STOP LOSS", "🛑"
-                else:                        raison, emoji = "TIME STOP", "⏱️"
+                if rendement >= tp_cible:
+                    raison, emoji = "TAKE PROFIT", "✅"
+                elif rendement <= STOP_LOSS:
+                    raison, emoji = "STOP LOSS", "🛑"
+                else:
+                    raison, emoji = "TIME STOP", "⏱️"
 
                 trade = {
-                    "date": aujourd_hui, "ticker": ticker, "action": "VENTE",
-                    "raison": raison, "prix": prix, "quantite": pos.get('quantite', 0),
-                    "valeur": round(pos['mise'] + pnl_net, 2), "pnl": round(pnl_net, 2),
-                    "pnl_pct": round(rendement * 100, 2), "frais": round(frais_vente, 2),
+                    "date"       : aujourd_hui,
+                    "ticker"     : ticker,
+                    "action"     : "VENTE",
+                    "raison"     : raison,
+                    "prix"       : prix,
+                    "quantite"   : pos.get('quantite', 0),
+                    "valeur"     : round(pos['mise'] + pnl_net, 2),
+                    "pnl"        : round(pnl_net, 2),
+                    "pnl_pct"    : round(rendement * 100, 2),
+                    "frais"      : round(frais_vente, 2),
                     "duree_jours": duree_jours
                 }
                 portfolio['historique'].append(trade)
@@ -228,46 +249,62 @@ def executer_trades(portfolio):
                 detail           = f"PnL: {pnl_net:+.0f}€ ({rendement*100:+.1f}%)"
                 position_ouverte = False
 
-        # ── ACHAT ─────────────────────────────────────────────────────────
+        # ── ACHAT ──────────────────────────────────────────────────────────
         if signal and not position_ouverte:
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
+                detail     = f"({MAX_POSITIONS} positions max)"
             else:
-                mise        = portfolio['capital_cash'] * MISE_PAR_TRADE
+                mise = portfolio['capital_cash'] * MISE_PAR_TRADE
+
+                # Protection si volatilité élevée
                 if vol > 0.04:
-                    mise   *= 0.7
+                    mise *= 0.7
+
                 frais_achat = mise * (FRAIS + SLIPPAGE)
                 mise_nette  = mise - frais_achat
 
                 if portfolio['capital_cash'] >= mise and mise_nette > 5:
-                    quantite     = mise_nette / prix
+                    quantite = mise_nette / prix
+
+                    # TP DYNAMIQUE calibré sur volatilité
                     tp_dynamique = min(max(TAKE_PROFIT_BASE, vol * 2), TAKE_PROFIT_MAX)
+
                     portfolio['capital_cash'] -= mise
                     portfolio['positions'][ticker] = {
-                        "quantite": round(quantite, 6), "prix_achat": prix,
-                        "date_achat": aujourd_hui, "mise": round(mise, 2),
-                        "tp_cible": round(tp_dynamique, 3)
+                        "quantite"  : round(quantite, 6),
+                        "prix_achat": prix,
+                        "date_achat": aujourd_hui,
+                        "mise"      : round(mise, 2),
+                        "tp_cible"  : round(tp_dynamique, 3)
                     }
                     trade = {
-                        "date": aujourd_hui, "ticker": ticker, "action": "ACHAT",
-                        "prix": prix, "quantite": round(quantite, 6),
-                        "mise": round(mise, 2), "frais": round(frais_achat, 2)
+                        "date"    : aujourd_hui,
+                        "ticker"  : ticker,
+                        "action"  : "ACHAT",
+                        "prix"    : prix,
+                        "quantite": round(quantite, 6),
+                        "mise"    : round(mise, 2),
+                        "frais"   : round(frais_achat, 2)
                     }
                     portfolio['historique'].append(trade)
                     trades_du_jour.append(trade)
                     action_str = "🟢 ACHETÉ"
-                    detail     = f"{mise:.0f}€ @ {prix:.2f} | RSI {rsi:.1f} | TP: +{tp_dynamique*100:.1f}%"
+                    detail     = f"{mise:.0f}€ @ {prix:.2f} | TP: +{tp_dynamique*100:.1f}%"
+                else:
+                    action_str = "⚠️ CASH INSUFFISANT"
 
+        # ── EN POSITION ────────────────────────────────────────────────────
         elif position_ouverte and ticker in portfolio['positions']:
             pos         = portfolio['positions'][ticker]
             rendement   = (prix - pos['prix_achat']) / pos['prix_achat']
             tp_cible    = pos.get('tp_cible', TAKE_PROFIT_BASE)
             duree_jours = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
             action_str  = "🔵 EN POSITION"
-            detail      = f"PnL: {rendement*100:+.1f}% | TP: +{tp_cible*100:.1f}% | Jour {duree_jours}/{MAX_DUREE}"
+            detail      = f"PnL: {rendement*100:+.1f}% | TP: +{tp_cible*100:.1f}% | SL: {STOP_LOSS*100:.0f}% | Jour {duree_jours}/{MAX_DUREE}"
 
-        signal_txt = f"🟢 {rsi:.1f}" if signal else f"⚪ {rsi:.1f}"
-        print(f"{ticker:<10} {rsi:<8.1f} {signal_txt:<10} {action_str:<22} {detail}")
+        signal_txt = f"🟢 RSI {rsi:.1f}" if signal else f"⚪ RSI {rsi:.1f}"
+        print(f"{ticker:<10} {rsi:<8.1f} {signal_txt:<12} {action_str:<22} {detail}")
 
     return portfolio, trades_du_jour
 
@@ -277,34 +314,60 @@ def afficher_resume(portfolio):
     valeur_totale = calculer_valeur_totale(portfolio)
     perf_totale   = (valeur_totale - portfolio['capital_depart']) / portfolio['capital_depart'] * 100
 
-    portfolio['valeur_historique'].append({"date": aujourd_hui, "valeur": valeur_totale})
+    portfolio['valeur_historique'].append({
+        "date"  : aujourd_hui,
+        "valeur": valeur_totale
+    })
 
     trades_fermes = [t for t in portfolio['historique'] if t['action'] == 'VENTE']
     nb_trades     = len(trades_fermes)
     wins          = [t for t in trades_fermes if t.get('pnl', 0) > 0]
+    stop_losses   = [t for t in trades_fermes if t.get('raison') == 'STOP LOSS']
+    take_profits  = [t for t in trades_fermes if t.get('raison') == 'TAKE PROFIT']
+    time_stops    = [t for t in trades_fermes if t.get('raison') == 'TIME STOP']
     win_rate      = len(wins) / nb_trades * 100 if nb_trades > 0 else 0
+
     sharpe, max_dd = calculer_metriques(portfolio)
 
     print("\n" + "═" * 75)
-    print(f"💼 RÉSUMÉ Canary Bot — {aujourd_hui}")
+    print(f"💼 RÉSUMÉ Mean Reversion (Élite V3) — {aujourd_hui}")
     print("═" * 75)
     print(f"  Capital de départ   : {portfolio['capital_depart']:.2f} €")
     print(f"  Valeur actuelle     : {valeur_totale:.2f} €")
     print(f"  Performance totale  : {perf_totale:+.2f}%")
     print(f"  Cash disponible     : {portfolio['capital_cash']:.2f} €")
     print(f"  Positions ouvertes  : {len(portfolio['positions'])} / {MAX_POSITIONS}")
-    print(f"  Trades fermés       : {nb_trades} | Win rate : {win_rate:.0f}%")
+    print(f"  Trades fermés       : {nb_trades} (TP: {len(take_profits)} | SL: {len(stop_losses)} | Time: {len(time_stops)})")
     print(f"  Logs journaliers    : {len(portfolio.get('logs_journaliers', []))} entrées")
+    print(f"  Win rate            : {win_rate:.0f}%")
+
     if sharpe is not None:
-        print(f"  Sharpe Ratio        : {sharpe:.2f}")
+        interpretation = "✅ Bon" if sharpe > 1 else ("⚠️ Moyen" if sharpe > 0 else "❌ Négatif")
+        print(f"  Sharpe Ratio        : {sharpe:.2f} {interpretation}")
         print(f"  Max Drawdown        : {max_dd:.1%}")
+
+    if portfolio['positions']:
+        print("\n  📂 Positions ouvertes :")
+        for ticker, pos in portfolio['positions'].items():
+            try:
+                prix_actuel = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
+                rendement   = (prix_actuel - pos['prix_achat']) / pos['prix_achat'] * 100
+                tp_cible    = pos.get('tp_cible', TAKE_PROFIT_BASE)
+                tp_distance = tp_cible * 100 - rendement
+                sl_distance = rendement - STOP_LOSS * 100
+                duree       = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
+                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f} → {rendement:+.1f}% | TP dans {tp_distance:.1f}% | SL dans {sl_distance:.1f}% | Jour {duree}/{MAX_DUREE}")
+            except:
+                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f}")
+
     print("═" * 75)
     return portfolio
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🐦 BOT CANARY — RSI < 45 | 31 tickers")
-    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n")
+    print("🤖 BOT MEAN REVERSION V3 (ÉLITE - SANS SPY - 31 Tickers)")
+    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+    print(f"   RSI {RSI_PERIOD}j < {RSI_SEUIL_ACHAT} | TP Dyn ({TAKE_PROFIT_BASE*100:.0f}%-{TAKE_PROFIT_MAX*100:.0f}%) | SL {STOP_LOSS*100:.0f}% | Time Stop {MAX_DUREE}j\n")
 
     faire_backup()
     portfolio         = charger_portfolio()
@@ -312,21 +375,23 @@ if __name__ == "__main__":
     portfolio         = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
 
+    # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
     val_fin = calculer_valeur_totale(portfolio)
 
     if trades:
         lignes = []
         for t in trades:
             if t['action'] == 'ACHAT':
-                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — {t['mise']:.0f}€")
+                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — Mise : {t['mise']:.0f}€")
             elif t['action'] == 'VENTE':
                 if   t.get('raison') == "TAKE PROFIT": emoji = "✅"
                 elif t.get('raison') == "STOP LOSS":   emoji = "🛑"
-                else:                                   emoji = "⏱️"
-                lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€")
+                else:                                  emoji = "⏱️"
+                lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€ ({t.get('raison', '')})")
         msg = "\n".join(lignes)
-        envoyer_alerte_telegram(f"🐦 *Canary Bot — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"🎯 *Mean Reversion V3 — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
     else:
-        envoyer_alerte_telegram(f"🐦 *Canary Bot — Scan terminé*\nAucun signal (RSI < {RSI_SEUIL_ACHAT})\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"😴 *Mean Reversion V3 — Scan terminé*\nAucun signal optimal aujourd'hui\n💰 Portfolio : {val_fin:.2f}€")
 
-    print(f"\n✅ Sauvegardé dans '{FICHIER}'\n")
+    print(f"\n✅ Sauvegardé dans '{FICHIER}'")
+    print("   Lance ce script chaque soir\n")
