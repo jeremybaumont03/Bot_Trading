@@ -1,0 +1,36 @@
+{
+  "capital_depart": 1000.0,
+  "capital_cash": 1000.0,
+  "positions": {},
+  "historique": [],
+  "valeur_historique": [
+    {
+      "date": "2026-03-24",
+      "valeur": 1000.0
+    },
+    {
+      "date": "2026-03-25",
+      "valeur": 1000.0
+    },
+    {
+      "date": "2026-03-26",
+      "valeur": 1000.0
+    },
+    {
+      "date": "2026-03-27",
+      "valeur": 1000.0
+    },
+    {
+      "date": "2026-03-30",
+      "valeur": 1000.0
+    },
+    {
+      "date": "2026-03-31",
+      "valeur": 1000.0
+    },
+    {
+      "date": "2026-04-01",
+      "valeur": 1000.0
+    }
+  ]
+}
