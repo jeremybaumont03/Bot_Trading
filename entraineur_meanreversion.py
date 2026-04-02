@@ -1,7 +1,8 @@
 """
-BOT MEAN REVERSION — entraineur_mr.py (VERSION V3 ÉLITE - SANS FILTRE SPY)
+BOT MEAN REVERSION — entraineur_mr.py (VERSION V3 ÉLITE)
 Améliorations : Time Stop (10j), TP dynamique (vol*2), Distance MA20
 Bugs corrigés : double valeur_historique, TP calibré sur volatilité
+Filtre SPY retiré — trade même en marché baissier
 Même structure que entraineur.py V2 — rien n'a été retiré.
 """
 
@@ -116,6 +117,7 @@ def calculer_signal_mr(ticker):
     Conditions d'achat :
     - RSI < 30 (survente)
     - Prix > 3% sous MA20 (écartement confirmé)
+    - Filtre SPY retiré — trade même en marché baissier
     """
     try:
         # ── Données de l'actif ──
@@ -125,7 +127,7 @@ def calculer_signal_mr(ticker):
         if len(df) < 20:
             return False, 0.0, 0.0, 0.0
 
-        df['RSI'] = calculer_rsi(df['Close'], RSI_PERIOD)
+        df['RSI']  = calculer_rsi(df['Close'], RSI_PERIOD)
         df['MA20'] = df['Close'].rolling(20).mean()
         df = df.dropna()
 
@@ -135,11 +137,11 @@ def calculer_signal_mr(ticker):
         ma20 = float(last['MA20'])
         vol  = float(df['Close'].pct_change().tail(20).std())
 
-        # ✅ Distance MA20 : le prix doit être > 3% sous sa moyenne
+        # Distance MA20 : le prix doit être > 3% sous sa moyenne
         distance_ma     = prix / ma20
         cassure_validee = distance_ma < 0.97
 
-        # Signal final (Filtre SPY retiré)
+        # ✅ Signal final — SPY filter removed
         signal = (rsi < RSI_SEUIL_ACHAT) and cassure_validee
 
         return signal, round(rsi, 2), round(prix, 4), round(vol, 4)
@@ -258,10 +260,7 @@ def executer_trades(portfolio):
                 mise_nette  = mise - frais_achat
 
                 if portfolio['capital_cash'] >= mise and mise_nette > 5:
-                    quantite = mise_nette / prix
-
-                    # ✅ TP DYNAMIQUE calibré sur volatilité (fix Gemini)
-                    # Plus le marché est volatil, plus le TP est grand
+                    quantite     = mise_nette / prix
                     tp_dynamique = min(max(TAKE_PROFIT_BASE, vol * 2), TAKE_PROFIT_MAX)
 
                     portfolio['capital_cash'] -= mise
@@ -308,7 +307,7 @@ def afficher_resume(portfolio):
     valeur_totale = calculer_valeur_totale(portfolio)
     perf_totale   = (valeur_totale - portfolio['capital_depart']) / portfolio['capital_depart'] * 100
 
-    # ✅ FIX BUG 1 : valeur_historique ajoutée UNE SEULE FOIS ici
+    # ✅ valeur_historique ajoutée UNE SEULE FOIS ici
     portfolio['valeur_historique'].append({
         "date"  : aujourd_hui,
         "valeur": valeur_totale
@@ -359,16 +358,15 @@ def afficher_resume(portfolio):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT MEAN REVERSION V3 (ÉLITE - SANS SPY)")
+    print("🤖 BOT MEAN REVERSION V3 (ÉLITE)")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print(f"   RSI {RSI_PERIOD}j < {RSI_SEUIL_ACHAT} | TP Dyn ({TAKE_PROFIT_BASE*100:.0f}%-{TAKE_PROFIT_MAX*100:.0f}%) | SL {STOP_LOSS*100:.0f}% | Time Stop {MAX_DUREE}j\n")
 
     faire_backup()
     portfolio         = charger_portfolio()
     portfolio, trades = executer_trades(portfolio)
-    portfolio         = afficher_resume(portfolio)   # ← ajoute valeur_historique UNE FOIS
+    portfolio         = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
-    # ✅ FIX BUG 1 : PAS de deuxième append ici — afficher_resume s'en charge déjà
 
     # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
     val_fin = calculer_valeur_totale(portfolio)
@@ -381,7 +379,7 @@ if __name__ == "__main__":
             elif t['action'] == 'VENTE':
                 if   t.get('raison') == "TAKE PROFIT": emoji = "✅"
                 elif t.get('raison') == "STOP LOSS":   emoji = "🛑"
-                else:                                  emoji = "⏱️"
+                else:                                   emoji = "⏱️"
                 lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€ ({t.get('raison', '')})")
         msg = "\n".join(lignes)
         envoyer_alerte_telegram(f"🎯 *Mean Reversion V3 — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
