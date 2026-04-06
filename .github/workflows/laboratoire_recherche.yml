@@ -1,0 +1,50 @@
+name: Laboratoire de Recherche (Ligne B)
+
+on:
+  schedule:
+    # S'exécute à 22h30 UTC du lundi au vendredi (15 min après tes bots de prod)
+    - cron: '30 22 * * 1-5'
+  workflow_dispatch: # Permet de le lancer manuellement depuis l'interface GitHub
+
+jobs:
+  run-labo:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v3
+
+      - name: Installation de Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Installation des librairies
+        # On installe tout ce dont les 3 scripts ont besoin
+        run: |
+          pip install yfinance pandas statsmodels hmmlearn scikit-learn requests
+
+      - name: 🚲 Exécution K-Means (Météo basique)
+        # Assure-toi que ton fichier s'appelle bien regime_kmeans.py
+        run: python regime_kmeans.py
+
+      - name: 🏎️ Exécution HMM (Météo avancée)
+        # Assure-toi que ton fichier s'appelle bien regime_hmm.py
+        run: python regime_hmm.py
+
+      - name: ⚖️ Exécution Pairs Trading (Scanner global)
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python pairs_bot.py
+
+      - name: 💾 Sauvegarde des journaux de recherche
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
+          
+          # On indique à Git de sauvegarder les 3 fichiers JSON
+          git add pairs_log.json regime_log.json kmeans_log.json
+          
+          # On commit et on push uniquement s'il y a eu des changements
+          git diff --quiet && git diff --staged --quiet || (git commit -m "🔬 Mise à jour des logs du Laboratoire" && git push)
