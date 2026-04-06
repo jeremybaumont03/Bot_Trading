@@ -244,7 +244,7 @@ def executer_trades(portfolio):
                 action_str = "🚫 MAX ATTEINT"
                 detail     = f"({MAX_POSITIONS} positions max)"
             else:
-                mise        = portfolio['capital_cash'] * allocation
+                mise        = (portfolio['capital_cash'] * allocation) * risk_multiplier
                 frais_achat = mise * (FRAIS + SLIPPAGE)
                 mise_nette  = mise - frais_achat
 
