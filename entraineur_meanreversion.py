@@ -12,10 +12,27 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import sys
 import shutil
 import requests
 from datetime import datetime
 
+# --- 🧠 LECTURE DU CERVEAU CENTRAL ---
+try:
+    with open("global_settings.json", "r") as f:
+        settings = json.load(f)
+        
+    if settings.get("master_switch_active") == False:
+        print("⛔ DANGER MARCHÉ : Le Cerveau Central a désactivé ce bot.")
+        sys.exit() # Arrête l'exécution du bot instantanément
+        
+    risk_multiplier = settings.get("risk_multiplier", 1.0)
+    print(f"✅ Bot autorisé. Multiplicateur de risque actuel : {risk_multiplier}x")
+
+except FileNotFoundError:
+    print("⚠️ Fichier global_settings.json introuvable. Exécution normale par défaut.")
+    risk_multiplier = 1.0
+  
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -255,8 +272,7 @@ def executer_trades(portfolio):
                 action_str = "🚫 MAX ATTEINT"
                 detail     = f"({MAX_POSITIONS} positions max)"
             else:
-                mise = portfolio['capital_cash'] * MISE_PAR_TRADE
-
+                mise = (portfolio['capital_cash'] * MISE_PAR_TRADE) * risk_multiplier
                 # Protection si volatilité élevée
                 if vol > 0.04:
                     mise *= 0.7
