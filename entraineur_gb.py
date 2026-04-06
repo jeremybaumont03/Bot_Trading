@@ -12,6 +12,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import sys
 import shutil
 import requests
 from datetime import datetime
@@ -222,7 +223,7 @@ def executer_trades(portfolio):
                 action_str = "🚫 MAX ATTEINT"
                 detail     = f"({MAX_POSITIONS} positions max)"
             else:
-                mise        = portfolio['capital_cash'] * allocation
+                mise        = (portfolio['capital_cash'] * allocation) * risk_multiplier
                 frais_achat = mise * (FRAIS + SLIPPAGE)
                 mise_nette  = mise - frais_achat
 
