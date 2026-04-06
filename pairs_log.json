@@ -1,0 +1,29 @@
+[
+    {
+        "date": "2026-04-06 23:01:24",
+        "asset_A": "AMZN",
+        "asset_B": "TSLA",
+        "price_A": 212.79,
+        "price_B": 352.82,
+        "z_score": 2.62,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-06 23:01:24",
+        "asset_A": "TSLA",
+        "asset_B": "BAC",
+        "price_A": 352.82,
+        "price_B": 50.06,
+        "z_score": -2.29,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-06 23:01:24",
+        "asset_A": "INTC",
+        "asset_B": "JNJ",
+        "price_A": 50.78,
+        "price_B": 240.97,
+        "z_score": 2.07,
+        "action": "SHORT THE SPREAD"
+    }
+]
