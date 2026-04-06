@@ -9,20 +9,21 @@ on:
 jobs:
   run-labo:
     runs-on: ubuntu-latest
+    
+    # 🔴 CORRECTION 1 : L'autorisation d'écrire sur ton GitHub
     permissions:
       contents: write
 
     steps:
       - name: Checkout du code
-        uses: actions/checkout@v4 # Version plus récente (v4)
+        uses: actions/checkout@v4
         with:
-          fetch-depth: 0
+          fetch-depth: 0 # Requis pour pouvoir faire un push propre
 
       - name: Installation de Python
-        uses: actions/setup-python@v5 # Version plus récente (v5)
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-          cache: 'pip'
 
       - name: Installation des librairies
         run: |
@@ -37,7 +38,8 @@ jobs:
 
       - name: ⚖️ Exécution Pairs Trading
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }} # Vérifie que c'est bien TELEGRAM_TOKEN dans tes secrets
+          # 🔴 CORRECTION 2 : Le bon nom pour ton token Telegram
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python pairs_bot.py || echo "Pairs Bot a échoué mais on continue"
 
@@ -46,12 +48,13 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action Bot"
           
-          # On ajoute les 3 logs de recherche
+          # On force l'ajout des fichiers (même s'ils sont créés pour la 1ère fois)
           git add pairs_log.json regime_log.json kmeans_log.json || true
           
+          # 🔴 CORRECTION 3 : Une méthode de sauvegarde beaucoup plus fiable
           if ! git diff --staged --quiet; then
-            git commit -m "🔬 Mise à jour des logs du Laboratoire - $(date '+%d/%m/%Y %H:%M')"
-            # Sécurité CRITIQUE : on récupère les modifs des 7 bots de prod avant de push
+            git commit -m "🔬 Mise à jour des logs du Laboratoire"
+            # Sécurité : on télécharge les modifications des autres bots avant de pousser
             git pull --rebase origin main
             git push
           else
