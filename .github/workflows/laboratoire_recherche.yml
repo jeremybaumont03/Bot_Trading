@@ -2,49 +2,58 @@ name: Laboratoire de Recherche (Ligne B)
 
 on:
   schedule:
-    # S'exécute à 22h30 UTC du lundi au vendredi (15 min après tes bots de prod)
+    # 22h30 UTC = 00h30 Paris (Heure d'été)
     - cron: '30 22 * * 1-5'
-  workflow_dispatch: # Permet de le lancer manuellement depuis l'interface GitHub
+  workflow_dispatch:
 
 jobs:
   run-labo:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout du code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4 # Version plus récente (v4)
+        with:
+          fetch-depth: 0
 
       - name: Installation de Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5 # Version plus récente (v5)
         with:
           python-version: '3.12'
+          cache: 'pip'
 
       - name: Installation des librairies
-        # On installe tout ce dont les 3 scripts ont besoin
         run: |
+          pip install --upgrade pip
           pip install yfinance pandas statsmodels hmmlearn scikit-learn requests
 
-      - name: 🚲 Exécution K-Means (Météo basique)
-        # Assure-toi que ton fichier s'appelle bien regime_kmeans.py
-        run: python regime_kmeans.py
+      - name: 🚲 Exécution K-Means
+        run: python regime_kmeans.py || echo "K-Means a échoué mais on continue"
 
-      - name: 🏎️ Exécution HMM (Météo avancée)
-        # Assure-toi que ton fichier s'appelle bien regime_hmm.py
-        run: python regime_hmm.py
+      - name: 🏎️ Exécution HMM
+        run: python regime_hmm.py || echo "HMM a échoué mais on continue"
 
-      - name: ⚖️ Exécution Pairs Trading (Scanner global)
+      - name: ⚖️ Exécution Pairs Trading
         env:
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_TOKEN }} # Vérifie que c'est bien TELEGRAM_TOKEN dans tes secrets
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python pairs_bot.py
+        run: python pairs_bot.py || echo "Pairs Bot a échoué mais on continue"
 
       - name: 💾 Sauvegarde des journaux de recherche
         run: |
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action Bot"
           
-          # On indique à Git de sauvegarder les 3 fichiers JSON
-          git add pairs_log.json regime_log.json kmeans_log.json
+          # On ajoute les 3 logs de recherche
+          git add pairs_log.json regime_log.json kmeans_log.json || true
           
-          # On commit et on push uniquement s'il y a eu des changements
-          git diff --quiet && git diff --staged --quiet || (git commit -m "🔬 Mise à jour des logs du Laboratoire" && git push)
+          if ! git diff --staged --quiet; then
+            git commit -m "🔬 Mise à jour des logs du Laboratoire - $(date '+%d/%m/%Y %H:%M')"
+            # Sécurité CRITIQUE : on récupère les modifs des 7 bots de prod avant de push
+            git pull --rebase origin main
+            git push
+          else
+            echo "Aucun nouveau log de recherche à enregistrer."
+          fi
