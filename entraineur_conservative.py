@@ -1,9 +1,12 @@
 """
-BOT DE PAPER TRADING — V2 CONSERVATEUR
+BOT DE PAPER TRADING — V2 CONSERVATEUR (ATR HYBRIDE)
 Améliorations :
   - Univers étendu : 31 Tickers (pour trouver les rares setups parfaits)
-  - Ultra Conservateur : Seuil IA fixe à 65% et Stop Loss serré à -5%
+  - Ultra Conservateur : Seuil IA fixe à 65%
+  - ATR Dynamique : TP et SL calculés en fonction de la volatilité
+  - Contrôle Central : Multiplicateurs lus depuis global_settings.json
   - Shadow Logging : Enregistre les probabilités IA même en cash
+  - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
   - Maximum 3 positions simultanées
 """
 
@@ -12,44 +15,23 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import sys
 import shutil
 import requests
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 
-# --- 🧠 LECTURE DU CERVEAU CENTRAL ---
-try:
-    with open("global_settings.json", "r") as f:
-        settings = json.load(f)
-        
-    if settings.get("master_switch_active") == False:
-        print("⛔ DANGER MARCHÉ : Le Cerveau Central a désactivé ce bot.")
-        sys.exit() # Arrête l'exécution du bot instantanément
-        
-    risk_multiplier = settings.get("risk_multiplier", 1.0)
-    print(f"✅ Bot autorisé. Multiplicateur de risque actuel : {risk_multiplier}x")
-
-except FileNotFoundError:
-    print("⚠️ Fichier global_settings.json introuvable. Exécution normale par défaut.")
-    risk_multiplier = 1.0
-  
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 TICKERS = [
-    # Mega-Cap Tech
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "NFLX",
-    # Semiconductors
     "AMD", "INTC", "TSM", "QCOM",
-    # Finance
     "JPM", "V", "BAC", "GS",
-    # Consumer & Industrial
     "WMT", "JNJ", "PG", "HD", "DIS",
-    # Crypto
     "BTC-USD", "ETH-USD",
-    # ETFs
     "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
 ]
 
@@ -57,24 +39,48 @@ CAPITAL_DEPART   = 1000.0
 FRAIS            = 0.001       # 0.1% par trade
 SLIPPAGE         = 0.0005      # 0.05% slippage
 VOL_TARGET       = 0.15        # cible volatilité annualisée
-
-# ✅ SEUIL FIXE CONSERVATEUR — l'IA doit être sûre à 65% minimum
-SEUIL_IA_FIXE    = 0.65        
-
-# ✅ STOP LOSS SERRÉ — vendre automatiquement si perte > 5%
-STOP_LOSS        = -0.05
-
-# ✅ MAX POSITIONS — jamais plus de 3 actifs en même temps
 MAX_POSITIONS    = 3
-TARGET_HAUSSE    = 0.03        # cible : +3% en 10 jours
+
+# ✅ PARAMÈTRES CONSERVATEURS & ATR HYBRIDE
+SEUIL_IA_FIXE    = 0.65        # l'IA doit être sûre à 65% minimum
+ML_TARGET_HAUSSE = 0.03        # cible : +3% en 10 jours
+ATR_PERIOD       = 14
+
+DEFAULT_ATR_TP_MULT = 2.0    # Fallback TP
+DEFAULT_ATR_SL_MULT = 1.5    # Fallback SL
 
 FICHIER          = "portfolio_conservative.json"
 DOSSIER_BACKUP   = "backups"
 
 # ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-FICHIER  = os.path.join(BASE_DIR, "portfolio_conservative.json")
+BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
+FICHIER        = os.path.join(BASE_DIR, "portfolio_conservative.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
+SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
+
+
+# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
+def charger_settings():
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            settings = json.load(f)
+
+        if not settings.get("master_switch_active", True):
+            print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille")
+            return None
+
+        atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
+        atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
+        risk   = settings.get("risk_multiplier", 1.0)
+        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
+        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
+
+    except FileNotFoundError:
+        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+    except Exception as e:
+        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
 
 # ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
@@ -120,7 +126,7 @@ def charger_portfolio():
         "positions"        : {},
         "historique"       : [],
         "valeur_historique": [],
-        "logs_journaliers" : [] # ✅ AJOUT DU SHADOW LOGGING
+        "logs_journaliers" : [] 
     }
     sauvegarder_portfolio(portfolio)
     print(f"✅ Nouveau portfolio créé avec {CAPITAL_DEPART}€ virtuels")
@@ -130,6 +136,14 @@ def sauvegarder_portfolio(portfolio):
     with open(FICHIER, "w") as f:
         json.dump(portfolio, f, indent=2, default=str)
 
+# ── ATR ───────────────────────────────────────────────────────────────────────
+def calculer_atr(df, period=14):
+    high_low    = df['High'] - df['Low']
+    high_close  = (df['High'] - df['Close'].shift()).abs()
+    low_close   = (df['Low']  - df['Close'].shift()).abs()
+    true_range  = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return true_range.rolling(window=period).mean()
+
 # ── SIGNAL ────────────────────────────────────────────────────────────────────
 def calculer_signal(ticker):
     try:
@@ -137,7 +151,7 @@ def calculer_signal(ticker):
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         if len(df) < 250:
-            return False, 0.0, 0.0, 0.0
+            return False, 0.0, 0.0, 0.0, 0.0
 
         df['MA50']       = df['Close'].rolling(50).mean()
         df['MA200']      = df['Close'].rolling(200).mean()
@@ -145,6 +159,7 @@ def calculer_signal(ticker):
         df['Mom_20j']    = df['Close'] / df['Close'].shift(20)
         df['Drawdown']   = df['Close'] / df['Close'].cummax() - 1
         df['Target']     = (df['Close'].shift(-10) / df['Close'] - 1 > TARGET_HAUSSE).astype(int)
+        df['ATR']        = calculer_atr(df, ATR_PERIOD)
         df = df.dropna()
 
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
@@ -164,12 +179,13 @@ def calculer_signal(ticker):
         vol_ann  = float(last['Volatility']) * np.sqrt(252)
         alloc    = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
         prix     = float(last['Close'])
+        atr      = float(last['ATR'])
 
-        return signal, round(proba, 4), round(alloc, 4), round(prix, 4)
+        return signal, round(proba, 4), round(alloc, 4), round(prix, 4), round(atr, 4)
 
     except Exception as e:
         print(f"  ⚠️  Erreur {ticker} : {e}")
-        return False, 0.0, 0.0, 0.0
+        return False, 0.0, 0.0, 0.0, 0.0
 
 # ── VALEUR DU PORTFOLIO ───────────────────────────────────────────────────────
 def calculer_valeur_totale(portfolio):
@@ -177,7 +193,7 @@ def calculer_valeur_totale(portfolio):
     for ticker, pos in portfolio['positions'].items():
         try:
             prix = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
-            valeur += prix * pos['quantite']
+            valeur += prix * pos.get('quantite', pos['mise'] / pos['prix_achat'])
         except:
             valeur += pos['mise']
     return round(valeur, 2)
@@ -203,21 +219,26 @@ def calculer_metriques(portfolio):
     return round(sharpe, 3), round(max_dd, 4)
 
 # ── TRADES ────────────────────────────────────────────────────────────────────
-def executer_trades(portfolio):
-    aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
+def executer_trades(portfolio, settings):
+    aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
+
+    atr_tp_mult = settings["atr_tp"]
+    atr_sl_mult = settings["atr_sl"]
+    risk_mult   = settings["risk"]
 
     if 'logs_journaliers' not in portfolio:
         portfolio['logs_journaliers'] = []
 
-    print(f"\n📅 Analyse du {aujourd_hui}")
+    print(f"\n📅 Analyse du {aujourd_hui} — RF Conservateur (V2 ATR Hybride)")
     print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
-    print("─" * 75)
-    print(f"{'ACTIF':<10} {'SIGNAL':<10} {'IA%':<7} {'ACTION':<18} {'DÉTAIL'}")
-    print("─" * 75)
+    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
+    print("─" * 90)
+    print(f"{'ACTIF':<10} {'IA%':<7} {'ATR':<8} {'SIGNAL':<12} {'ACTION':<20} {'DÉTAIL'}")
+    print("─" * 90)
 
     for ticker in TICKERS:
-        signal, proba, allocation, prix = calculer_signal(ticker)
+        signal, proba, allocation, prix, atr = calculer_signal(ticker)
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
@@ -231,29 +252,86 @@ def executer_trades(portfolio):
         })
         portfolio['logs_journaliers'] = portfolio['logs_journaliers'][-1000:]
 
+        # ── VÉRIFICATION TP / SL DYNAMIQUE ──────────────────────
         if position_ouverte:
-            pos     = portfolio['positions'][ticker]
-            pnl_pct = (prix - pos['prix_achat']) / pos['prix_achat']
-            if pnl_pct < STOP_LOSS:
-                signal = False   
+            pos        = portfolio['positions'][ticker]
+            prix_achat = pos['prix_achat']
+            tp_cible   = pos.get('tp_cible')
+            sl_cible   = pos.get('sl_cible')
+            rendement  = (prix - prix_achat) / prix_achat
 
+            vendre = False
+            raison = ""
+
+            if tp_cible and prix >= tp_cible:
+                vendre, raison = True, "TAKE PROFIT"
+                emoji = "✅"
+            elif sl_cible and prix <= sl_cible:
+                vendre, raison = True, "STOP LOSS"
+                emoji = "🛑"
+            elif not signal: 
+                vendre, raison = True, "SIGNAL IA"
+                emoji = "🤖"
+
+            if vendre:
+                quantite     = pos.get('quantite', pos['mise'] / prix_achat)
+                valeur_vente = quantite * prix
+                frais_vente  = valeur_vente * (FRAIS + SLIPPAGE)
+                valeur_nette = valeur_vente - frais_vente
+                pnl_net      = valeur_nette - pos['mise']
+                duree_jours  = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
+
+                portfolio['capital_cash'] += valeur_nette
+
+                trade = {
+                    "date"          : aujourd_hui,
+                    "ticker"        : ticker,
+                    "action"        : "VENTE",
+                    "raison"        : raison,
+                    "prix"          : prix,
+                    "quantite"      : round(quantite, 6),
+                    "valeur"        : round(valeur_nette, 2),
+                    "pnl"           : round(pnl_net, 2),
+                    "pnl_pct"       : round(rendement * 100, 2),
+                    "frais"         : round(frais_vente, 2),
+                    "duree_jours"   : duree_jours,
+                    "atr_lors_achat": pos.get('atr_lors_achat', 0)
+                }
+                portfolio['historique'].append(trade)
+                trades_du_jour.append(trade)
+                del portfolio['positions'][ticker]
+                action_str       = f"{emoji} VENDU ({raison})"
+                detail           = f"PnL: {pnl_net:+.0f}€ ({rendement*100:+.1f}%)"
+                position_ouverte = False
+
+        # ── ACHAT HYBRIDE ──────────────────────────────────────────────────
         if signal and not position_ouverte:
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
                 detail     = f"({MAX_POSITIONS} positions max)"
+            elif atr == 0.0:
+                action_str = "⚠️ ATR INDISPONIBLE"
             else:
-                mise        = (portfolio['capital_cash'] * allocation) * risk_multiplier
-                frais_achat = mise * (FRAIS + SLIPPAGE)
-                mise_nette  = mise - frais_achat
+                mise_brute  = portfolio['capital_cash'] * allocation * risk_mult
+                frais_achat = mise_brute * (FRAIS + SLIPPAGE)
+                mise_nette  = mise_brute - frais_achat
 
-                if mise_nette > 5:
+                if portfolio['capital_cash'] >= mise_brute and mise_nette > 5:
                     quantite = mise_nette / prix
-                    portfolio['capital_cash'] -= mise
+                    tp_cible = round(prix + (atr * atr_tp_mult), 4)
+                    sl_cible = round(prix - (atr * atr_sl_mult), 4)
+
+                    portfolio['capital_cash'] -= mise_brute
                     portfolio['positions'][ticker] = {
-                        "quantite"  : round(quantite, 6),
-                        "prix_achat": prix,
-                        "date_achat": aujourd_hui,
-                        "mise"      : round(mise, 2)
+                        "quantite"      : round(quantite, 6),
+                        "prix_achat"    : prix,
+                        "date_achat"    : aujourd_hui,
+                        "mise"          : round(mise_brute, 2),
+                        "tp_cible"      : tp_cible,
+                        "sl_cible"      : sl_cible,
+                        "atr_lors_achat": atr,
+                        "atr_tp_mult"   : atr_tp_mult,
+                        "atr_sl_mult"   : atr_sl_mult
                     }
                     trade = {
                         "date"    : aujourd_hui,
@@ -261,56 +339,31 @@ def executer_trades(portfolio):
                         "action"  : "ACHAT",
                         "prix"    : prix,
                         "quantite": round(quantite, 6),
-                        "mise"    : round(mise, 2),
-                        "frais"   : round(frais_achat, 2)
+                        "mise"    : round(mise_brute, 2),
+                        "frais"   : round(frais_achat, 2),
+                        "tp_cible": tp_cible,
+                        "sl_cible": sl_cible,
+                        "atr"     : atr
                     }
                     portfolio['historique'].append(trade)
                     trades_du_jour.append(trade)
                     action_str = "🟢 ACHETÉ"
-                    detail     = f"{mise:.0f}€ @ {prix:.2f}"
+                    detail     = f"{mise_brute:.0f}€ @ {prix:.2f} | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
+                else:
+                    action_str = "⚠️ CASH INSUFFISANT"
 
-        elif not signal and position_ouverte:
-            pos          = portfolio['positions'][ticker]
-            valeur_vente = pos['quantite'] * prix
-            frais_vente  = valeur_vente * (FRAIS + SLIPPAGE)
-            valeur_nette = valeur_vente - frais_vente
-            pnl          = valeur_nette - pos['mise']
-            pnl_pct_reel = (pnl / pos['mise']) * 100
-            duree        = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
-
-            raison = "STOP LOSS" if pnl_pct_reel < STOP_LOSS * 100 else "SIGNAL"
-
-            portfolio['capital_cash'] += valeur_nette
-            del portfolio['positions'][ticker]
-
-            trade = {
-                "date"       : aujourd_hui,
-                "ticker"     : ticker,
-                "action"     : "VENTE",
-                "raison"     : raison,
-                "prix"       : prix,
-                "quantite"   : pos['quantite'],
-                "valeur"     : round(valeur_nette, 2),
-                "pnl"        : round(pnl, 2),
-                "pnl_pct"    : round(pnl_pct_reel, 2),
-                "frais"      : round(frais_vente, 2),
-                "duree_jours": duree
-            }
-            portfolio['historique'].append(trade)
-            trades_du_jour.append(trade)
-
-            emoji      = "🛑" if raison == "STOP LOSS" else "🔴"
-            action_str = f"{emoji} VENDU ({raison})"
-            detail     = f"PnL: {pnl:+.0f}€ ({pnl_pct_reel:+.1f}%)"
-
-        elif signal and position_ouverte:
-            pos        = portfolio['positions'][ticker]
-            pnl_latent = (prix - pos['prix_achat']) / pos['prix_achat'] * 100
+        # ── EN POSITION ────────────────────────────────────────────────────
+        elif position_ouverte and ticker in portfolio['positions']:
+            pos       = portfolio['positions'][ticker]
+            rendement = (prix - pos['prix_achat']) / pos['prix_achat']
+            tp_cible  = pos.get('tp_cible', 0)
+            sl_cible  = pos.get('sl_cible', 0)
             action_str = "🔵 EN POSITION"
-            detail     = f"PnL latent: {pnl_latent:+.1f}% | SL: {STOP_LOSS*100:.0f}%"
+            detail     = f"PnL:{rendement*100:+.1f}% | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
 
-        signal_txt = "🟢 ACHAT" if signal else "🔴 CASH"
-        print(f"{ticker:<10} {signal_txt:<10} {proba:<7.0%} {action_str:<18} {detail}")
+        signal_txt = "🟢 ACHAT" if signal else "⚪ CASH"
+        atr_txt    = f"{atr:.2f}" if atr > 0 else "N/A"
+        print(f"{ticker:<10} {proba:<7.0%} {atr_txt:<8} {signal_txt:<12} {action_str:<20} {detail}")
 
     return portfolio, trades_du_jour
 
@@ -329,20 +382,20 @@ def afficher_resume(portfolio):
     nb_trades       = len(trades_fermes)
     wins            = [t for t in portfolio['historique'] if t.get('pnl', 0) > 0]
     stop_losses     = [t for t in trades_fermes if t.get('raison') == 'STOP LOSS']
+    take_profits    = [t for t in trades_fermes if t.get('raison') == 'TAKE PROFIT']
     win_rate        = len(wins) / nb_trades * 100 if nb_trades > 0 else 0
 
     sharpe, max_dd  = calculer_metriques(portfolio)
 
     print("\n" + "═" * 75)
-    print(f"💼 RÉSUMÉ — {aujourd_hui}")
+    print(f"💼 RÉSUMÉ RF Conservateur (V2 ATR Hybride) — {aujourd_hui}")
     print("═" * 75)
     print(f"  Capital de départ   : {portfolio['capital_depart']:.2f} €")
     print(f"  Valeur actuelle     : {valeur_totale:.2f} €")
     print(f"  Performance totale  : {perf_totale:+.2f}%")
     print(f"  Cash disponible     : {portfolio['capital_cash']:.2f} €")
     print(f"  Positions ouvertes  : {len(portfolio['positions'])} / {MAX_POSITIONS}")
-    print(f"  Trades fermés       : {nb_trades} (dont {len(stop_losses)} stop loss)")
-    print(f"  Logs journaliers    : {len(portfolio.get('logs_journaliers', []))} entrées")
+    print(f"  Trades fermés       : {nb_trades} (TP: {len(take_profits)} | SL: {len(stop_losses)})")
     print(f"  Win rate            : {win_rate:.0f}%")
 
     if sharpe is not None:
@@ -355,9 +408,10 @@ def afficher_resume(portfolio):
         for ticker, pos in portfolio['positions'].items():
             try:
                 prix_actuel = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
-                pnl         = (prix_actuel - pos['prix_achat']) / pos['prix_achat'] * 100
-                sl_distance = pnl - (STOP_LOSS * 100)
-                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f} → {pnl:+.1f}% | Stop dans {sl_distance:.1f}%")
+                rendement   = (prix_actuel - pos['prix_achat']) / pos['prix_achat'] * 100
+                tp_cible    = pos.get('tp_cible', 0)
+                sl_cible    = pos.get('sl_cible', 0)
+                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f} → {rendement:+.1f}% | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}")
             except:
                 print(f"    {ticker:<8} @ {pos['prix_achat']:.2f}")
 
@@ -366,31 +420,34 @@ def afficher_resume(portfolio):
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT PAPER TRADING V2 - CONSERVATEUR (31 Tickers)")
+    print("🤖 BOT PAPER TRADING V2 - CONSERVATEUR (ATR HYBRIDE)")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Stop loss : {STOP_LOSS:.0%} | Max positions : {MAX_POSITIONS}\n")
+    print(f"   Seuil IA fixe : {SEUIL_IA_FIXE:.0%} | Max pos : {MAX_POSITIONS}\n")
 
     faire_backup()
+    
+    settings = charger_settings()
+    if settings is None:
+        print("🛑 Master Switch OFF — arrêt du bot.")
+        sys.exit(0)
+
     portfolio          = charger_portfolio()
-    portfolio, trades  = executer_trades(portfolio)
+    portfolio, trades  = executer_trades(portfolio, settings)
     portfolio          = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
     
-    # ── ALERTE TELEGRAM ──────────────────────────────────────────────────────
     val_fin = calculer_valeur_totale(portfolio)
 
     if trades:
         lignes = []
         for t in trades:
             if t['action'] == 'ACHAT':
-                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — Mise : {t['mise']:.0f}€")
+                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} | TP:{t.get('tp_cible',0):.2f} | SL:{t.get('sl_cible',0):.2f} | ATR:{t.get('atr',0):.2f}")
             elif t['action'] == 'VENTE':
-                lignes.append(f"🔴 VENTE {t['ticker']} @ {t['prix']:.2f} — PnL : {t.get('pnl', 0):+.0f}€")
+                emoji = {"TAKE PROFIT": "✅", "STOP LOSS": "🛑", "SIGNAL IA": "🤖"}.get(t.get('raison', ''), "🔴")
+                lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€ ({t.get('raison', '')})")
         
         msg = "\n".join(lignes)
-        envoyer_alerte_telegram(f"🛡️ *Mouvements du jour — RF Conservateur*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"🛡️ *RF Conservateur ATR — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
     else:
-        envoyer_alerte_telegram(f"😴 *Scan terminé — RF Conservateur*\nAucun mouvement aujourd'hui\n💰 Portfolio : {val_fin:.2f}€")
-
-    print(f"\n✅ Sauvegardé dans '{FICHIER}'")
-    print("   Lance ce script chaque soir\n")
+        envoyer_alerte_telegram(f"😴 *RF Conservateur ATR — Scan terminé*\nAucun mouvement aujourd'hui\n💰 Portfolio : {val_fin:.2f}€")
