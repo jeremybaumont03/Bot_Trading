@@ -7,6 +7,7 @@ Améliorations vs V1 :
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
   - Shadow Logging (Logs des probas IA)
+  - Corrections V2.1 : import sys ajouté et sortie IA corrigée.
 """
 
 import yfinance as yf
@@ -16,6 +17,7 @@ import json
 import os
 import shutil
 import requests
+import sys  # ✅ AJOUTÉ POUR ÉVITER LE CRASH D'ENVIRONNEMENT
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 
@@ -249,8 +251,7 @@ def executer_trades(portfolio, settings):
             elif sl_cible and prix <= sl_cible:
                 vendre, raison = True, "STOP LOSS"
                 emoji = "🛑"
-            elif not signal and prix > prix_achat: 
-                # Sortie IA classique si l'IA n'y croit plus et qu'on est en gain
+            elif not signal: # ✅ CORRECTION APPLIQUÉE ICI : L'IA PEUT COUPER SES PERTES
                 vendre, raison = True, "SIGNAL IA"
                 emoji = "🤖"
 
@@ -407,7 +408,7 @@ if __name__ == "__main__":
     settings = charger_settings()
     if settings is None:
         print("🛑 Master Switch OFF — arrêt du bot.")
-        exit(0)
+        sys.exit(0)  # ✅ CORRECTION APPLIQUÉE ICI : sys.exit() au lieu de exit()
 
     portfolio         = charger_portfolio()
     portfolio, trades = executer_trades(portfolio, settings)
