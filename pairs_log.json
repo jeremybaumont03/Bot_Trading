@@ -25,5 +25,50 @@
         "price_B": 240.97,
         "z_score": 2.07,
         "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-07 23:03:48",
+        "asset_A": "AMZN",
+        "asset_B": "TSLA",
+        "price_A": 213.77,
+        "price_B": 346.65,
+        "z_score": 2.71,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-07 23:03:48",
+        "asset_A": "INTC",
+        "asset_B": "JNJ",
+        "price_A": 52.91,
+        "price_B": 238.41,
+        "z_score": 2.7,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-07 23:03:48",
+        "asset_A": "BAC",
+        "asset_B": "GS",
+        "price_A": 50.28,
+        "price_B": 864.15,
+        "z_score": 2.46,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-07 23:03:48",
+        "asset_A": "AAPL",
+        "asset_B": "IWM",
+        "price_A": 253.5,
+        "price_B": 252.91,
+        "z_score": -2.38,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-07 23:03:48",
+        "asset_A": "TSLA",
+        "asset_B": "BAC",
+        "price_A": 346.65,
+        "price_B": 50.28,
+        "z_score": -2.32,
+        "action": "LONG THE SPREAD"
     }
 ]
