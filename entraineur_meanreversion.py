@@ -5,6 +5,7 @@ Améliorations vs V3 Élite :
   - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
   - Time Stop (10j) conservé
   - Tous les filtres V3 conservés (RSI, MA20, filtre SPY)
+  - Correction sys.exit() appliquée
 """
 
 import yfinance as yf
@@ -12,6 +13,7 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import sys
 import shutil
 import requests
 from datetime import datetime
@@ -262,7 +264,7 @@ def executer_trades(portfolio, settings):
                 emoji = "⏱️"
 
             if vendre:
-                quantite    = pos.get('quantite', pos['mise'] / prix_achat)
+                quantite     = pos.get('quantite', pos['mise'] / prix_achat)
                 valeur_vente = quantite * prix
                 frais_vente  = valeur_vente * (FRAIS + SLIPPAGE)
                 valeur_nette = valeur_vente - frais_vente
@@ -271,17 +273,17 @@ def executer_trades(portfolio, settings):
                 portfolio['capital_cash'] += valeur_nette
 
                 trade = {
-                    "date"        : aujourd_hui,
-                    "ticker"      : ticker,
-                    "action"      : "VENTE",
-                    "raison"      : raison,
-                    "prix"        : prix,
-                    "quantite"    : round(quantite, 6),
-                    "valeur"      : round(valeur_nette, 2),
-                    "pnl"         : round(pnl_net, 2),
-                    "pnl_pct"     : round(rendement * 100, 2),
-                    "frais"       : round(frais_vente, 2),
-                    "duree_jours" : duree_jours,
+                    "date"          : aujourd_hui,
+                    "ticker"        : ticker,
+                    "action"        : "VENTE",
+                    "raison"        : raison,
+                    "prix"          : prix,
+                    "quantite"      : round(quantite, 6),
+                    "valeur"        : round(valeur_nette, 2),
+                    "pnl"           : round(pnl_net, 2),
+                    "pnl_pct"       : round(rendement * 100, 2),
+                    "frais"         : round(frais_vente, 2),
+                    "duree_jours"   : duree_jours,
                     "atr_lors_achat": pos.get('atr_lors_achat', 0)
                 }
                 portfolio['historique'].append(trade)
@@ -417,7 +419,7 @@ if __name__ == "__main__":
     settings = charger_settings()
     if settings is None:
         print("🛑 Master Switch OFF — arrêt du bot.")
-        exit(0)
+        sys.exit(0) # ✅ CORRECTION APPLIQUÉE ICI : sys.exit() au lieu de exit()
 
     portfolio         = charger_portfolio()
     portfolio, trades = executer_trades(portfolio, settings)
