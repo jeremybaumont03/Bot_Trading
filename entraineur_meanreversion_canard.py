@@ -1,8 +1,10 @@
 """
-BOT CANARY — entraineur_mr_canary.py
+BOT CANARY — entraineur_mr_canary.py (VERSION ATR HYBRIDE)
 But : générer de l'activité et vérifier que toute l'infrastructure fonctionne.
 Règles volontairement plus souples que le bot MR Elite.
-RSI < 45 au lieu de 30 — trade presque tous les jours.
+  - RSI < 45 au lieu de 30 — trade presque tous les jours.
+  - ATR Dynamique : TP et SL calculés en fonction de la volatilité
+  - Contrôle Central : Multiplicateurs lus depuis global_settings.json
 """
 
 import yfinance as yf
@@ -15,39 +17,17 @@ import shutil
 import requests
 from datetime import datetime
 
-# --- 🧠 LECTURE DU CERVEAU CENTRAL ---
-try:
-    with open("global_settings.json", "r") as f:
-        settings = json.load(f)
-        
-    if settings.get("master_switch_active") == False:
-        print("⛔ DANGER MARCHÉ : Le Cerveau Central a désactivé ce bot.")
-        sys.exit() # Arrête l'exécution du bot instantanément
-        
-    risk_multiplier = settings.get("risk_multiplier", 1.0)
-    print(f"✅ Bot autorisé. Multiplicateur de risque actuel : {risk_multiplier}x")
-
-except FileNotFoundError:
-    print("⚠️ Fichier global_settings.json introuvable. Exécution normale par défaut.")
-    risk_multiplier = 1.0
-    
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
 TICKERS = [
-    # Mega-Cap Tech
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "NFLX",
-    # Semiconductors
     "AMD", "INTC", "TSM", "QCOM",
-    # Finance
     "JPM", "V", "BAC", "GS",
-    # Consumer & Industrial
     "WMT", "JNJ", "PG", "HD", "DIS",
-    # Crypto
     "BTC-USD", "ETH-USD",
-    # ETFs
     "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
 ]
 
@@ -55,22 +35,48 @@ CAPITAL_DEPART = 1000.0
 FRAIS          = 0.001
 SLIPPAGE       = 0.0005
 
-# ── PARAMÈTRES CANARY (volontairement souples) ────────────────────────────────
+# ── PARAMÈTRES CANARY & ATR HYBRIDE ───────────────────────────────────────────
 RSI_PERIOD       = 7
 RSI_SEUIL_ACHAT  = 45        # Souples — achète les légers dips
-TAKE_PROFIT_BASE = 0.02      # +2% — sortie rapide
-TAKE_PROFIT_MAX  = 0.05      # +5% max
-STOP_LOSS        = -0.08     # -8% — plus de marge
-MAX_DUREE        = 7         # Time stop 7 jours
+ATR_PERIOD       = 14
+MAX_DUREE        = 7         # Time stop 7 jours (plus court que MR Elite)
 MAX_POSITIONS    = 3
 MISE_PAR_TRADE   = 0.15      # 15% du capital
 
-FICHIER        = "portfolio_mr_canary.json"
-DOSSIER_BACKUP = "backups"
+# Paramètres ATR agressifs par défaut pour le Canary
+DEFAULT_ATR_TP_MULT = 1.5    # TP plus rapide
+DEFAULT_ATR_SL_MULT = 2.0    # Laisse plus de respiration
 
+# ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 FICHIER        = os.path.join(BASE_DIR, "portfolio_mr_canary.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
+SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
+
+# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
+def charger_settings():
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            settings = json.load(f)
+
+        if not settings.get("master_switch_active", True):
+            print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille")
+            return None
+
+        # Le Canary utilise des multiplicateurs plus agressifs s'ils ne sont pas spécifiés
+        atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
+        atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
+        risk   = settings.get("risk_multiplier", 1.0)
+        
+        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
+        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
+
+    except FileNotFoundError:
+        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+    except Exception as e:
+        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
@@ -123,13 +129,20 @@ def sauvegarder_portfolio(portfolio):
     with open(FICHIER, "w") as f:
         json.dump(portfolio, f, indent=2, default=str)
 
-# ── RSI ───────────────────────────────────────────────────────────────────────
+# ── ATR & RSI ─────────────────────────────────────────────────────────────────
 def calculer_rsi(series, period=14):
     delta = series.diff()
     gain  = (delta.where(delta > 0, 0)).rolling(window=period).mean()
     loss  = (-delta.where(delta < 0, 0)).rolling(window=period).mean()
     rs    = gain / loss
     return 100 - (100 / (1 + rs))
+
+def calculer_atr(df, period=14):
+    high_low    = df['High'] - df['Low']
+    high_close  = (df['High'] - df['Close'].shift()).abs()
+    low_close   = (df['Low']  - df['Close'].shift()).abs()
+    true_range  = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return true_range.rolling(window=period).mean()
 
 # ── SIGNAL ────────────────────────────────────────────────────────────────────
 def calculer_signal(ticker):
@@ -142,19 +155,20 @@ def calculer_signal(ticker):
 
         df['RSI']  = calculer_rsi(df['Close'], RSI_PERIOD)
         df['MA20'] = df['Close'].rolling(20).mean()
+        df['ATR']  = calculer_atr(df, ATR_PERIOD)
         df = df.dropna()
 
         last        = df.iloc[-1]
         rsi         = float(last['RSI'])
         prix        = float(last['Close'])
         ma20        = float(last['MA20'])
-        vol         = float(df['Close'].pct_change().tail(20).std())
+        atr         = float(last['ATR'])
         distance_ma = prix / ma20
 
         # Canary : règles souples — RSI < 45 suffit
         signal = rsi < RSI_SEUIL_ACHAT
 
-        return signal, round(rsi, 2), round(prix, 4), round(vol, 4), round(distance_ma, 4)
+        return signal, round(rsi, 2), round(prix, 4), round(atr, 4), round(distance_ma, 4)
 
     except Exception as e:
         print(f"  ⚠️  Erreur {ticker} : {e}")
@@ -166,7 +180,7 @@ def calculer_valeur_totale(portfolio):
     for ticker, pos in portfolio['positions'].items():
         try:
             prix = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
-            valeur += pos['mise'] * (1 + (prix - pos['prix_achat']) / pos['prix_achat'])
+            valeur += prix * pos.get('quantite', pos['mise'] / pos['prix_achat'])
         except:
             valeur += pos['mise']
     return round(valeur, 2)
@@ -189,21 +203,26 @@ def calculer_metriques(portfolio):
     return round(sharpe, 3), round(max_dd, 4)
 
 # ── TRADES ────────────────────────────────────────────────────────────────────
-def executer_trades(portfolio):
+def executer_trades(portfolio, settings):
     aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
+
+    atr_tp_mult = settings["atr_tp"]
+    atr_sl_mult = settings["atr_sl"]
+    risk_mult   = settings["risk"]
 
     if 'logs_journaliers' not in portfolio:
         portfolio['logs_journaliers'] = []
 
     print(f"\n📅 Analyse du {aujourd_hui} — Canary Bot (RSI < {RSI_SEUIL_ACHAT})")
     print(f"   Positions : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers : {len(TICKERS)}")
-    print("─" * 80)
-    print(f"{'ACTIF':<10} {'RSI':<8} {'SIGNAL':<10} {'ACTION':<22} {'DÉTAIL'}")
-    print("─" * 80)
+    print(f"   Multiplicateurs : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
+    print("─" * 90)
+    print(f"{'ACTIF':<10} {'RSI':<8} {'ATR':<8} {'SIGNAL':<10} {'ACTION':<20} {'DÉTAIL'}")
+    print("─" * 90)
 
     for ticker in TICKERS:
-        signal, rsi, prix, vol, distance_ma = calculer_signal(ticker)
+        signal, rsi, prix, atr, distance_ma = calculer_signal(ticker)
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
@@ -216,35 +235,46 @@ def executer_trades(portfolio):
             "distance_ma20" : distance_ma,
             "signal_valide" : bool(signal)
         })
-        # Garde seulement les 1000 derniers logs
         portfolio['logs_journaliers'] = portfolio['logs_journaliers'][-1000:]
 
-        # ── TP / SL / TIME STOP ───────────────────────────────────────────
+        # ── VÉRIFICATION TP / SL DYNAMIQUE / TIME STOP ─────────────────────
         if position_ouverte:
             pos         = portfolio['positions'][ticker]
-            rendement   = (prix - pos['prix_achat']) / pos['prix_achat']
-            tp_cible    = pos.get('tp_cible', TAKE_PROFIT_BASE)
+            prix_achat  = pos['prix_achat']
+            tp_cible    = pos.get('tp_cible')
+            sl_cible    = pos.get('sl_cible')
             duree_jours = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
+            rendement   = (prix - prix_achat) / prix_achat
 
-            if rendement >= tp_cible or rendement <= STOP_LOSS or duree_jours >= MAX_DUREE:
-                pnl         = pos['mise'] * rendement
-                frais_vente = pos['mise'] * (1 + rendement) * (FRAIS + SLIPPAGE)
-                pnl_net     = pnl - frais_vente
-                portfolio['capital_cash'] += pos['mise'] + pnl_net
+            vendre = False
+            raison = ""
 
-                if rendement >= tp_cible:
-                    raison, emoji = "TAKE PROFIT", "✅"
-                elif rendement <= STOP_LOSS:
-                    raison, emoji = "STOP LOSS", "🛑"
-                else:
-                    raison, emoji = "TIME STOP", "⏱️"
+            if tp_cible and prix >= tp_cible:
+                vendre, raison = True, "TAKE PROFIT"
+                emoji = "✅"
+            elif sl_cible and prix <= sl_cible:
+                vendre, raison = True, "STOP LOSS"
+                emoji = "🛑"
+            elif duree_jours >= MAX_DUREE:
+                vendre, raison = True, "TIME STOP"
+                emoji = "⏱️"
+
+            if vendre:
+                quantite     = pos.get('quantite', pos['mise'] / prix_achat)
+                valeur_vente = quantite * prix
+                frais_vente  = valeur_vente * (FRAIS + SLIPPAGE)
+                valeur_nette = valeur_vente - frais_vente
+                pnl_net      = valeur_nette - pos['mise']
+
+                portfolio['capital_cash'] += valeur_nette
 
                 trade = {
                     "date": aujourd_hui, "ticker": ticker, "action": "VENTE",
-                    "raison": raison, "prix": prix, "quantite": pos.get('quantite', 0),
-                    "valeur": round(pos['mise'] + pnl_net, 2), "pnl": round(pnl_net, 2),
+                    "raison": raison, "prix": prix, "quantite": round(quantite, 6),
+                    "valeur": round(valeur_nette, 2), "pnl": round(pnl_net, 2),
                     "pnl_pct": round(rendement * 100, 2), "frais": round(frais_vente, 2),
-                    "duree_jours": duree_jours
+                    "duree_jours": duree_jours,
+                    "atr_lors_achat": pos.get('atr_lors_achat', 0)
                 }
                 portfolio['historique'].append(trade)
                 trades_du_jour.append(trade)
@@ -253,46 +283,52 @@ def executer_trades(portfolio):
                 detail           = f"PnL: {pnl_net:+.0f}€ ({rendement*100:+.1f}%)"
                 position_ouverte = False
 
-        # ── ACHAT ─────────────────────────────────────────────────────────
+        # ── ACHAT HYBRIDE ──────────────────────────────────────────────────
         if signal and not position_ouverte:
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
+            elif atr == 0.0:
+                action_str = "⚠️ ATR INDISPONIBLE"
             else:
-                mise = (portfolio['capital_cash'] * MISE_PAR_TRADE) * risk_multiplier
-                if vol > 0.04:
-                    mise   *= 0.7
+                mise = (portfolio['capital_cash'] * MISE_PAR_TRADE) * risk_mult
                 frais_achat = mise * (FRAIS + SLIPPAGE)
                 mise_nette  = mise - frais_achat
 
                 if portfolio['capital_cash'] >= mise and mise_nette > 5:
-                    quantite     = mise_nette / prix
-                    tp_dynamique = min(max(TAKE_PROFIT_BASE, vol * 2), TAKE_PROFIT_MAX)
+                    quantite = mise_nette / prix
+                    tp_cible = round(prix + (atr * atr_tp_mult), 4)
+                    sl_cible = round(prix - (atr * atr_sl_mult), 4)
+
                     portfolio['capital_cash'] -= mise
                     portfolio['positions'][ticker] = {
                         "quantite": round(quantite, 6), "prix_achat": prix,
                         "date_achat": aujourd_hui, "mise": round(mise, 2),
-                        "tp_cible": round(tp_dynamique, 3)
+                        "tp_cible": tp_cible, "sl_cible": sl_cible,
+                        "atr_lors_achat": atr, "atr_tp_mult": atr_tp_mult, "atr_sl_mult": atr_sl_mult
                     }
                     trade = {
                         "date": aujourd_hui, "ticker": ticker, "action": "ACHAT",
                         "prix": prix, "quantite": round(quantite, 6),
-                        "mise": round(mise, 2), "frais": round(frais_achat, 2)
+                        "mise": round(mise, 2), "frais": round(frais_achat, 2),
+                        "tp_cible": tp_cible, "sl_cible": sl_cible, "atr": atr
                     }
                     portfolio['historique'].append(trade)
                     trades_du_jour.append(trade)
                     action_str = "🟢 ACHETÉ"
-                    detail     = f"{mise:.0f}€ @ {prix:.2f} | RSI {rsi:.1f} | TP: +{tp_dynamique*100:.1f}%"
+                    detail     = f"{mise:.0f}€ @ {prix:.2f} | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
 
         elif position_ouverte and ticker in portfolio['positions']:
             pos         = portfolio['positions'][ticker]
             rendement   = (prix - pos['prix_achat']) / pos['prix_achat']
-            tp_cible    = pos.get('tp_cible', TAKE_PROFIT_BASE)
+            tp_cible    = pos.get('tp_cible', 0)
+            sl_cible    = pos.get('sl_cible', 0)
             duree_jours = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
             action_str  = "🔵 EN POSITION"
-            detail      = f"PnL: {rendement*100:+.1f}% | TP: +{tp_cible*100:.1f}% | Jour {duree_jours}/{MAX_DUREE}"
+            detail      = f"PnL: {rendement*100:+.1f}% | TP:{tp_cible:.2f} | SL:{sl_cible:.2f} | Jour {duree_jours}/{MAX_DUREE}"
 
         signal_txt = f"🟢 {rsi:.1f}" if signal else f"⚪ {rsi:.1f}"
-        print(f"{ticker:<10} {rsi:<8.1f} {signal_txt:<10} {action_str:<22} {detail}")
+        atr_txt    = f"{atr:.2f}" if atr > 0 else "N/A"
+        print(f"{ticker:<10} {rsi:<8.1f} {atr_txt:<8} {signal_txt:<10} {action_str:<20} {detail}")
 
     return portfolio, trades_du_jour
 
@@ -311,7 +347,7 @@ def afficher_resume(portfolio):
     sharpe, max_dd = calculer_metriques(portfolio)
 
     print("\n" + "═" * 75)
-    print(f"💼 RÉSUMÉ Canary Bot — {aujourd_hui}")
+    print(f"💼 RÉSUMÉ Canary Bot (ATR Hybride) — {aujourd_hui}")
     print("═" * 75)
     print(f"  Capital de départ   : {portfolio['capital_depart']:.2f} €")
     print(f"  Valeur actuelle     : {valeur_totale:.2f} €")
@@ -323,17 +359,37 @@ def afficher_resume(portfolio):
     if sharpe is not None:
         print(f"  Sharpe Ratio        : {sharpe:.2f}")
         print(f"  Max Drawdown        : {max_dd:.1%}")
+    
+    if portfolio['positions']:
+        print("\n  📂 Positions ouvertes :")
+        for ticker, pos in portfolio['positions'].items():
+            try:
+                prix_actuel = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
+                rendement   = (prix_actuel - pos['prix_achat']) / pos['prix_achat'] * 100
+                tp_cible    = pos.get('tp_cible', 0)
+                sl_cible    = pos.get('sl_cible', 0)
+                atr_achat   = pos.get('atr_lors_achat', 0)
+                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f} → {rendement:+.1f}% | TP:{tp_cible:.2f} | SL:{sl_cible:.2f} | ATR:{atr_achat:.2f}")
+            except:
+                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f}")
+
     print("═" * 75)
     return portfolio
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🐦 BOT CANARY — RSI < 45 | 31 tickers")
+    print("🐦 BOT CANARY (ATR HYBRIDE) — RSI < 45 | 31 tickers")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}\n")
 
     faire_backup()
+    
+    settings = charger_settings()
+    if settings is None:
+        print("🛑 Master Switch OFF — arrêt du bot.")
+        sys.exit(0)
+
     portfolio         = charger_portfolio()
-    portfolio, trades = executer_trades(portfolio)
+    portfolio, trades = executer_trades(portfolio, settings)
     portfolio         = afficher_resume(portfolio)
     sauvegarder_portfolio(portfolio)
 
@@ -343,15 +399,15 @@ if __name__ == "__main__":
         lignes = []
         for t in trades:
             if t['action'] == 'ACHAT':
-                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} — {t['mise']:.0f}€")
+                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} | TP:{t.get('tp_cible',0):.2f} | SL:{t.get('sl_cible',0):.2f} | ATR:{t.get('atr',0):.2f}")
             elif t['action'] == 'VENTE':
                 if   t.get('raison') == "TAKE PROFIT": emoji = "✅"
                 elif t.get('raison') == "STOP LOSS":   emoji = "🛑"
                 else:                                  emoji = "⏱️"
                 lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€")
         msg = "\n".join(lignes)
-        envoyer_alerte_telegram(f"🐦 *Canary Bot — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"🐦 *Canary Bot ATR — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
     else:
-        envoyer_alerte_telegram(f"🐦 *Canary Bot — Scan terminé*\nAucun signal (RSI < {RSI_SEUIL_ACHAT})\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"🐦 *Canary Bot ATR — Scan terminé*\nAucun signal (RSI < {RSI_SEUIL_ACHAT})\n💰 Portfolio : {val_fin:.2f}€")
 
     print(f"\n✅ Sauvegardé dans '{FICHIER}'\n")
