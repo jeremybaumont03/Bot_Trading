@@ -8,5 +8,10 @@
         "date": "2026-04-07 23:03:34",
         "model": "K-Means",
         "regime": "BULL/NORMAL MARKET (S\u00fbr)"
+    },
+    {
+        "date": "2026-04-08 23:04:33",
+        "model": "K-Means",
+        "regime": "BULL/NORMAL MARKET (S\u00fbr)"
     }
 ]
