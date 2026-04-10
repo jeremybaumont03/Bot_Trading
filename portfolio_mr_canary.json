@@ -167,6 +167,10 @@
     {
       "date": "2026-04-09",
       "valeur": 991.75
+    },
+    {
+      "date": "2026-04-10",
+      "valeur": 991.75
     }
   ],
   "logs_journaliers": [
@@ -1428,6 +1432,216 @@
       "ticker": "XLF",
       "rsi": 100.0,
       "distance_ma20": 1.0416,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "AAPL",
+      "rsi": 69.19,
+      "distance_ma20": 1.0284,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "MSFT",
+      "rsi": 53.03,
+      "distance_ma20": 0.9834,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "NVDA",
+      "rsi": 100.0,
+      "distance_ma20": 1.0632,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "GOOGL",
+      "rsi": 91.9,
+      "distance_ma20": 1.0599,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "AMZN",
+      "rsi": 97.48,
+      "distance_ma20": 1.1234,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "META",
+      "rsi": 91.15,
+      "distance_ma20": 1.0653,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "TSLA",
+      "rsi": 28.58,
+      "distance_ma20": 0.9409,
+      "signal_valide": true
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "NFLX",
+      "rsi": 91.43,
+      "distance_ma20": 1.0775,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "AMD",
+      "rsi": 100.0,
+      "distance_ma20": 1.1644,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "INTC",
+      "rsi": 100.0,
+      "distance_ma20": 1.2947,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "TSM",
+      "rsi": 92.55,
+      "distance_ma20": 1.0842,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "QCOM",
+      "rsi": 45.86,
+      "distance_ma20": 0.9964,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "JPM",
+      "rsi": 93.72,
+      "distance_ma20": 1.0616,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "V",
+      "rsi": 55.21,
+      "distance_ma20": 1.003,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "BAC",
+      "rsi": 95.88,
+      "distance_ma20": 1.0791,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "GS",
+      "rsi": 94.36,
+      "distance_ma20": 1.0826,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "WMT",
+      "rsi": 57.87,
+      "distance_ma20": 1.0223,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "JNJ",
+      "rsi": 24.62,
+      "distance_ma20": 0.994,
+      "signal_valide": true
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "PG",
+      "rsi": 53.6,
+      "distance_ma20": 0.9999,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "HD",
+      "rsi": 59.48,
+      "distance_ma20": 1.0208,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "DIS",
+      "rsi": 74.52,
+      "distance_ma20": 1.0182,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "BTC-USD",
+      "rsi": 88.44,
+      "distance_ma20": 1.0621,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "ETH-USD",
+      "rsi": 82.5,
+      "distance_ma20": 1.0709,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "SPY",
+      "rsi": 98.5,
+      "distance_ma20": 1.0331,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "QQQ",
+      "rsi": 100.0,
+      "distance_ma20": 1.0385,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "IWM",
+      "rsi": 95.49,
+      "distance_ma20": 1.0459,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "TLT",
+      "rsi": 54.92,
+      "distance_ma20": 1.0011,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "GLD",
+      "rsi": 61.9,
+      "distance_ma20": 1.0182,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "XLK",
+      "rsi": 100.0,
+      "distance_ma20": 1.0449,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-10",
+      "ticker": "XLF",
+      "rsi": 77.78,
+      "distance_ma20": 1.0279,
       "signal_valide": false
     }
   ]
