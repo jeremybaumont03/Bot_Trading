@@ -7,7 +7,7 @@ Améliorations vs V1 :
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
   - Shadow Logging (Logs des probas IA)
-  - Corrections V2.1 : import sys ajouté et sortie IA corrigée.
+  - Corrections V2.2 : import sys, sortie IA corrigée, FIX ANTI-OVERFITTING (Live Quant).
 """
 
 import yfinance as yf
@@ -17,7 +17,7 @@ import json
 import os
 import shutil
 import requests
-import sys  # ✅ AJOUTÉ POUR ÉVITER LE CRASH D'ENVIRONNEMENT
+import sys  
 from datetime import datetime
 from sklearn.ensemble import RandomForestClassifier
 
@@ -158,10 +158,14 @@ def calculer_signal(ticker):
         df = df.dropna()
 
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
-        split    = int(len(df) * 0.85)
+        
+        # ✅ FIX PRO : Entraînement sur TOUT l'historique jusqu'à hier ([:-1])
+        X_train = df[features].iloc[:-1]
+        y_train = df['Target'].iloc[:-1]
 
-        model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
-        model.fit(df[features].iloc[:split], df['Target'].iloc[:split])
+        # ✅ FIX ANTI-OVERFITTING : On bride l'arbre (max_depth=3, min_samples_leaf=30)
+        model = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=30, random_state=42)
+        model.fit(X_train, y_train)
 
         last  = df.iloc[-1]
         proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
@@ -251,7 +255,7 @@ def executer_trades(portfolio, settings):
             elif sl_cible and prix <= sl_cible:
                 vendre, raison = True, "STOP LOSS"
                 emoji = "🛑"
-            elif not signal: # ✅ CORRECTION APPLIQUÉE ICI : L'IA PEUT COUPER SES PERTES
+            elif not signal: # ✅ L'IA PEUT COUPER SES PERTES
                 vendre, raison = True, "SIGNAL IA"
                 emoji = "🤖"
 
@@ -408,7 +412,7 @@ if __name__ == "__main__":
     settings = charger_settings()
     if settings is None:
         print("🛑 Master Switch OFF — arrêt du bot.")
-        sys.exit(0)  # ✅ CORRECTION APPLIQUÉE ICI : sys.exit() au lieu de exit()
+        sys.exit(0)  
 
     portfolio         = charger_portfolio()
     portfolio, trades = executer_trades(portfolio, settings)
