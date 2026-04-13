@@ -1,11 +1,12 @@
 """
-BOT MEAN REVERSION — entraineur_mr.py (VERSION V4 ATR HYBRIDE)
+BOT DE PAPER TRADING — V2 MEAN REVERSION (V4 ATR HYBRIDE)
 Améliorations vs V3 Élite :
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité réelle de chaque actif
   - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
   - Time Stop (10j) conservé
   - Tous les filtres V3 conservés (RSI, MA20, filtre SPY)
   - Correction sys.exit() appliquée
+  - FIX PRIX 0.0 : Sécurité contre les bugs Yahoo Finance
 """
 
 import yfinance as yf
@@ -237,6 +238,12 @@ def executer_trades(portfolio, settings):
 
     for ticker in TICKERS:
         signal, rsi, prix, atr = calculer_signal_mr(ticker)
+        
+        # ✅ THE 0.0 PRICE BUG FIX (Sécurité anti-crash)
+        if prix <= 0.0:
+            print(f"⚠️ Yahoo Finance API Bug for {ticker} (Price is 0.0). Skipping.")
+            continue
+            
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
@@ -419,7 +426,7 @@ if __name__ == "__main__":
     settings = charger_settings()
     if settings is None:
         print("🛑 Master Switch OFF — arrêt du bot.")
-        sys.exit(0) # ✅ CORRECTION APPLIQUÉE ICI : sys.exit() au lieu de exit()
+        sys.exit(0) 
 
     portfolio         = charger_portfolio()
     portfolio, trades = executer_trades(portfolio, settings)
