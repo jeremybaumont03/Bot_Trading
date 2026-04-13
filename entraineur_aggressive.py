@@ -7,6 +7,7 @@ Améliorations :
   - Contrôle Central : Multiplicateurs lus depuis global_settings.json
   - Shadow Logging : Enregistre les probabilités IA même en cash
   - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
+  - FIX ANTI-OVERFITTING : Entraînement Live Quant.
 """
 
 import yfinance as yf
@@ -157,10 +158,14 @@ def calculer_signal(ticker):
         df = df.dropna()
 
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
-        split    = int(len(df) * 0.85)
+        
+        # ✅ FIX PRO : Entraînement sur TOUT l'historique jusqu'à hier ([:-1])
+        X_train = df[features].iloc[:-1]
+        y_train = df['Target'].iloc[:-1]
 
-        model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
-        model.fit(df[features].iloc[:split], df['Target'].iloc[:split])
+        # ✅ FIX ANTI-OVERFITTING : On bride l'arbre pour forcer la généralisation
+        model = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=30, random_state=42)
+        model.fit(X_train, y_train)
 
         last  = df.iloc[-1]
         proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
