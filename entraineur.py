@@ -3,11 +3,11 @@ BOT DE PAPER TRADING — V2 RANDOM FOREST (Standard ATR HYBRIDE)
 Améliorations vs V1 :
   - Univers étendu : 31 Tickers
   - Confiance pure en l'IA : Suppression des filtres MA200/Momentum
-  - Seuil réaliste (51%)
+  - Seuil réaliste (55%)
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
   - Shadow Logging (Logs des probas IA)
-  - Corrections V2.2 : import sys, sortie IA corrigée, FIX ANTI-OVERFITTING (Live Quant).
+  - Corrections V2.2 : import sys, sortie IA corrigée, FIX ANTI-OVERFITTING (Live Quant), FIX PRIX 0.0.
 """
 
 import yfinance as yf
@@ -42,7 +42,7 @@ VOL_TARGET       = 0.15        # cible volatilité annualisée
 MAX_POSITIONS    = 3
 
 # ✅ PARAMÈTRES IA & ATR HYBRIDE
-SEUIL_IA_FIXE    = 0.55        # l'IA doit être sûre à 51% minimum
+SEUIL_IA_FIXE    = 0.55        # l'IA doit être sûre à 55% minimum
 ML_TARGET_HAUSSE = 0.01        # Cible d'entraînement IA (+1% en 10j)
 ATR_PERIOD       = 14
 
@@ -226,6 +226,12 @@ def executer_trades(portfolio, settings):
 
     for ticker in TICKERS:
         signal, proba, allocation, prix, atr = calculer_signal(ticker)
+        
+        # ✅ FIX PRIX 0.0 : Sécurité anti-crash Yahoo Finance
+        if prix <= 0.0:
+            print(f"⚠️ Bug API Yahoo Finance pour {ticker} (Prix 0.0). On ignore.")
+            continue
+            
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
