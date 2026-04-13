@@ -1,61 +1,71 @@
-name: Trading Bot Multi-Stratégies
+name: Fleet Commander (Trading Bots)
 
 on:
   schedule:
-    # 21h15 UTC = 23h15 Paris (Heure d'été)
-    - cron: '15 21 * * 1-5'
-  workflow_dispatch:
+    # Se lance du Lundi au Vendredi à 22h15 UTC (fin de journée de bourse)
+    - cron: '15 22 * * 1-5' 
+  workflow_dispatch: # Permet de lancer le workflow manuellement via un bouton sur GitHub
 
 jobs:
-  run-bot:
+  run-trading-system:
     runs-on: ubuntu-latest
-    permissions:
-      contents: write
-
     steps:
-      - name: Checkout du code
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Set up Python
+        uses: actions/setup-python@v4
         with:
-          fetch-depth: 0 # Récupère tout l'historique pour éviter les erreurs de push
-
-      - name: Installation Python 3.11
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.11'
-          cache: 'pip' # Accélère les lancements futurs
-
-      - name: Installation des dépendances
+          python-version: '3.10'
+          
+      - name: Install dependencies
         run: |
-          pip install --upgrade pip
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-
-      - name: Lancement des 7 Bots
+          python -m pip install --upgrade pip
+          pip install yfinance pandas numpy scikit-learn requests
+        
+      - name: 🧠 1. Run Meta-Controller (Génère global_settings.json)
+        run: python meta_controller.py
+        
+      - name: 🤖 2. Run Random Forest (Standard)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur.py || true
+        
+      - name: 🦅 3. Run Random Forest (Agressif)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur_aggressive.py || true
+        
+      - name: 🛡️ 4. Run Random Forest (Conservateur)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur_conservative.py || true
+        
+      - name: 📈 5. Run Logistic Regression
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur_lr.py || true
+        
+      - name: 🚀 6. Run Gradient Boosting
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur_gb.py || true
+
+      - name: 🐦 7. Run Canary Bot
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur_mr_canary.py || true
+
+      - name: Commit and Push Portfolios
         run: |
-          python entraineur.py || true
-          python entraineur_lr.py || true
-          python entraineur_gb.py || true
-          python entraineur_conservative.py || true
-          python entraineur_aggressive.py || true
-          python entraineur_meanreversion.py || true
-          python entraineur_meanreversion_canard.py || true
-          
-      - name: Sauvegarder et Synchroniser
-        run: |
-          git config --global user.name "Trading Bot"
-          git config --global user.email "bot@trading.local"
-          
-          # On ajoute tout : portfolios, logs et backups
-          git add *.json backups/ || true
-          
-          # On vérifie s'il y a des changements avant de commit
-          if ! git diff --staged --quiet; then
-            git commit -m "📊 MAJ Multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
-            # Sécurité : on "pull" les changements éventuels du Labo B avant de "push"
-            git pull --rebase origin main
-            git push
-          else
-            echo "Aucun changement à sauvegarder aujourd'hui."
-          fi
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add portfolio*.json global_settings.json backups/
+          git commit -m "🤖 Auto-update portfolios & settings" || echo "No changes to commit"
+          git push
