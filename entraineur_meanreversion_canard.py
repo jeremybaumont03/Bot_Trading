@@ -5,6 +5,7 @@ Règles volontairement plus souples que le bot MR Elite.
   - RSI < 45 au lieu de 30 — trade presque tous les jours.
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs lus depuis global_settings.json
+  - FIX PRIX 0.0 : Sécurité contre les bugs Yahoo Finance
 """
 
 import yfinance as yf
@@ -81,20 +82,20 @@ def charger_settings():
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
     if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
-        print("ℹ️ Telegram non configuré — alerte ignorée")
+        print("ℹ️ Telegram ignoré en mode local (pas de tokens).")
         return
+        
+    url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
     try:
-        url     = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-        payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
         requests.post(url, data=payload, timeout=10)
-        print("📱 Alerte Telegram envoyée")
     except Exception as e:
         print(f"⚠️ Erreur Telegram : {e}")
 
-# ── BACKUP ────────────────────────────────────────────────────────────────────
+# ── LA FONCTION DE SAUVEGARDE ─────────────────────────────────────────────────
 def faire_backup():
     if not os.path.exists(FICHIER):
-        return
+        return  
     try:
         os.makedirs(DOSSIER_BACKUP, exist_ok=True)
         date_str   = datetime.now().strftime("%Y-%m-%d")
@@ -119,7 +120,7 @@ def charger_portfolio():
         "positions"        : {},
         "historique"       : [],
         "valeur_historique": [],
-        "logs_journaliers" : []
+        "logs_journaliers" : [] 
     }
     sauvegarder_portfolio(portfolio)
     print(f"✅ Nouveau portfolio Canary créé avec {CAPITAL_DEPART}€ virtuels")
@@ -223,6 +224,12 @@ def executer_trades(portfolio, settings):
 
     for ticker in TICKERS:
         signal, rsi, prix, atr, distance_ma = calculer_signal(ticker)
+        
+        # ✅ THE 0.0 PRICE BUG FIX (Sécurité anti-crash)
+        if prix <= 0.0:
+            print(f"⚠️ Yahoo Finance API Bug for {ticker} (Price is 0.0). Skipping.")
+            continue
+            
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
