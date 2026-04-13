@@ -2,15 +2,14 @@ name: Laboratoire de Recherche (Ligne B)
 
 on:
   schedule:
-    # 22h30 UTC = 00h30 Paris (Heure d'été)
-    - cron: '30 22 * * 1-5'
+    # 21h00 UTC = 23h00 Paris (Heure d'été) -> Tourne AVANT les bots !
+    - cron: '00 21 * * 1-5'
   workflow_dispatch:
 
 jobs:
   run-labo:
     runs-on: ubuntu-latest
     
-    # 🔴 CORRECTION 1 : L'autorisation d'écrire sur ton GitHub
     permissions:
       contents: write
 
@@ -18,7 +17,7 @@ jobs:
       - name: Checkout du code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Requis pour pouvoir faire un push propre
+          fetch-depth: 0
 
       - name: Installation de Python
         uses: actions/setup-python@v5
@@ -38,7 +37,6 @@ jobs:
 
       - name: ⚖️ Exécution Pairs Trading
         env:
-          # 🔴 CORRECTION 2 : Le bon nom pour ton token Telegram
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python pairs_bot.py || echo "Pairs Bot a échoué mais on continue"
@@ -48,13 +46,12 @@ jobs:
           git config --local user.email "action@github.com"
           git config --local user.name "GitHub Action Bot"
           
-          # On force l'ajout des fichiers (même s'ils sont créés pour la 1ère fois)
+          # On ajoute les fichiers de logs
           git add pairs_log.json regime_log.json kmeans_log.json || true
           
-          # 🔴 CORRECTION 3 : Une méthode de sauvegarde beaucoup plus fiable
+          # Sauvegarde propre
           if ! git diff --staged --quiet; then
             git commit -m "🔬 Mise à jour des logs du Laboratoire"
-            # Sécurité : on télécharge les modifications des autres bots avant de pousser
             git pull --rebase origin main
             git push
           else
