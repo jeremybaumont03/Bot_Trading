@@ -42,7 +42,7 @@ VOL_TARGET       = 0.15        # cible volatilité annualisée
 MAX_POSITIONS    = 3
 
 # ✅ PARAMÈTRES IA & ATR HYBRIDE
-SEUIL_IA_FIXE    = 0.51        # l'IA doit être sûre à 51% minimum
+SEUIL_IA_FIXE    = 0.55        # l'IA doit être sûre à 51% minimum
 ML_TARGET_HAUSSE = 0.01        # Cible d'entraînement IA (+1% en 10j)
 ATR_PERIOD       = 14
 
