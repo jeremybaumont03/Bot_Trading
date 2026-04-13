@@ -259,5 +259,68 @@
         "price_B": 261.3,
         "z_score": -2.07,
         "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "BAC",
+        "asset_B": "GS",
+        "price_A": 53.35,
+        "price_B": 890.79,
+        "z_score": 3.1,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "AAPL",
+        "asset_B": "IWM",
+        "price_A": 259.2,
+        "price_B": 265.07,
+        "z_score": -2.85,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "NVDA",
+        "asset_B": "XLK",
+        "price_A": 189.31,
+        "price_B": 145.61,
+        "z_score": -2.22,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "AAPL",
+        "asset_B": "AMD",
+        "price_A": 259.2,
+        "price_B": 246.83,
+        "z_score": -2.16,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "AMZN",
+        "asset_B": "JPM",
+        "price_A": 239.89,
+        "price_B": 313.68,
+        "z_score": 2.14,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "AMZN",
+        "asset_B": "TSLA",
+        "price_A": 239.89,
+        "price_B": 352.42,
+        "z_score": 2.14,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-13 21:48:26",
+        "asset_A": "AMZN",
+        "asset_B": "XLF",
+        "price_A": 239.89,
+        "price_B": 51.66,
+        "z_score": 2.07,
+        "action": "SHORT THE SPREAD"
     }
 ]
