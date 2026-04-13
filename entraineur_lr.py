@@ -3,11 +3,12 @@ BOT DE PAPER TRADING — V2 LOGISTIC REGRESSION (ATR HYBRIDE)
 Améliorations :
   - Univers étendu : 31 Tickers
   - Confiance pure en l'IA : Suppression des filtres MA200/Momentum
-  - Seuil réaliste (51%)
-  - Modèle : LogisticRegression
+  - Seuil réaliste (55%)
+  - Modèle : LogisticRegression (Régularisé C=0.1)
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs lus depuis global_settings.json
   - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
+  - FIX ANTI-OVERFITTING (Live Quant) & FIX PRIX 0.0
 """
 
 import yfinance as yf
@@ -42,7 +43,7 @@ VOL_TARGET       = 0.15        # cible volatilité annualisée
 MAX_POSITIONS    = 3
 
 # ✅ PARAMÈTRES IA & ATR HYBRIDE
-SEUIL_IA_FIXE    = 0.51        # Si l'IA voit 51% de chances de gain, on y va
+SEUIL_IA_FIXE    = 0.55        # Si l'IA voit 55% de chances de gain, on y va
 ML_TARGET_HAUSSE = 0.01        # Cible réaliste d'entraînement : +1% en 10 jours
 ATR_PERIOD       = 14
 
@@ -157,11 +158,14 @@ def calculer_signal(ticker):
         df = df.dropna()
 
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
-        split    = int(len(df) * 0.85)
+        
+        # ✅ FIX PRO : Entraînement sur TOUT l'historique jusqu'à hier ([:-1])
+        X_train = df[features].iloc[:-1]
+        y_train = df['Target'].iloc[:-1]
 
-        # Entraînement de la Régression Logistique
-        model = LogisticRegression(max_iter=1000, random_state=42)
-        model.fit(df[features].iloc[:split], df['Target'].iloc[:split])
+        # ✅ FIX ANTI-OVERFITTING : Régularisation avec C=0.1
+        model = LogisticRegression(max_iter=1000, C=0.1, random_state=42)
+        model.fit(X_train, y_train)
 
         last  = df.iloc[-1]
         proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
@@ -231,6 +235,12 @@ def executer_trades(portfolio, settings):
 
     for ticker in TICKERS:
         signal, proba, allocation, prix, atr = calculer_signal(ticker)
+        
+        # ✅ THE 0.0 PRICE BUG FIX
+        if prix <= 0.0:
+            print(f"⚠️ Yahoo Finance API Bug for {ticker} (Price is 0.0). Skipping to protect portfolio.")
+            continue
+            
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
