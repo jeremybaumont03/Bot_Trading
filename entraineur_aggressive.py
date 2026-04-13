@@ -2,12 +2,13 @@
 BOT DE PAPER TRADING — V2 AGRESSIF (Edition "Canard" ATR HYBRIDE)
 Améliorations :
   - Univers étendu : 31 Tickers (Grande liquidité)
-  - Ultra Agressif : Seuil IA baissé à 38%
+  - Ultra Agressif : Seuil IA baissé à 45%
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs lus depuis global_settings.json
   - Shadow Logging : Enregistre les probabilités IA même en cash
   - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
   - FIX ANTI-OVERFITTING : Entraînement Live Quant.
+  - FIX PRIX 0.0 : Sécurité contre les bugs Yahoo Finance.
 """
 
 import yfinance as yf
@@ -42,7 +43,7 @@ VOL_TARGET       = 0.15        # cible volatilité annualisée
 MAX_POSITIONS    = 3
 
 # ✅ PARAMÈTRES AGRESSIFS & ATR HYBRIDE
-SEUIL_IA_FIXE    = 0.45       # l'IA n'a besoin d'être sûre qu'à 38%
+SEUIL_IA_FIXE    = 0.45        # l'IA n'a besoin d'être sûre qu'à 45%
 ML_TARGET_HAUSSE = 0.015       # cible d'entrainement ML : +1.5% en 10 jours
 ATR_PERIOD       = 14
 
@@ -170,12 +171,8 @@ def calculer_signal(ticker):
         last  = df.iloc[-1]
         proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
 
-        # On garde une tendance haussière minime et on compte sur l'IA
-        trend_ok = float(last['Close'])   > float(last['MA200'])
-        mom_ok   = float(last['Mom_20j']) > 1.00
-        ia_ok    = proba > SEUIL_IA_FIXE
-
-        signal   = trend_ok and mom_ok and ia_ok
+        # ✅ IA PURE : Seulement la probabilité compte (plus de filtres)
+        signal   = proba > SEUIL_IA_FIXE
         vol_ann  = float(last['Volatility']) * np.sqrt(252)
         alloc    = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
         prix     = float(last['Close'])
@@ -239,6 +236,12 @@ def executer_trades(portfolio, settings):
 
     for ticker in TICKERS:
         signal, proba, allocation, prix, atr = calculer_signal(ticker)
+        
+        # ✅ THE 0.0 PRICE BUG FIX
+        if prix <= 0.0:
+            print(f"⚠️ Yahoo Finance API Bug for {ticker} (Price is 0.0). Skipping to protect portfolio.")
+            continue
+            
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
@@ -268,7 +271,7 @@ def executer_trades(portfolio, settings):
             elif sl_cible and prix <= sl_cible:
                 vendre, raison = True, "STOP LOSS"
                 emoji = "🛑"
-            elif not signal: # L'IA n'y croit plus ou la tendance/momentum a cassé
+            elif not signal: # L'IA n'y croit plus
                 vendre, raison = True, "SIGNAL IA"
                 emoji = "🤖"
 
