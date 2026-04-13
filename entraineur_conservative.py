@@ -3,11 +3,13 @@ BOT DE PAPER TRADING — V2 CONSERVATEUR (ATR HYBRIDE)
 Améliorations :
   - Univers étendu : 31 Tickers (pour trouver les rares setups parfaits)
   - Ultra Conservateur : Seuil IA fixe à 65%
+  - Confiance pure en l'IA : Suppression des filtres MA200/Momentum
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
   - Contrôle Central : Multiplicateurs lus depuis global_settings.json
   - Shadow Logging : Enregistre les probabilités IA même en cash
   - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
   - Maximum 3 positions simultanées
+  - FIX ANTI-OVERFITTING (Live Quant) & FIX PRIX 0.0
 """
 
 import yfinance as yf
@@ -49,15 +51,11 @@ ATR_PERIOD       = 14
 DEFAULT_ATR_TP_MULT = 2.0    # Fallback TP
 DEFAULT_ATR_SL_MULT = 1.5    # Fallback SL
 
-FICHIER          = "portfolio_conservative.json"
-DOSSIER_BACKUP   = "backups"
-
 # ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
 BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
 FICHIER        = os.path.join(BASE_DIR, "portfolio_conservative.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
-
 
 # ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
 def charger_settings():
@@ -158,24 +156,26 @@ def calculer_signal(ticker):
         df['Volatility'] = df['Close'].pct_change().rolling(20).std()
         df['Mom_20j']    = df['Close'] / df['Close'].shift(20)
         df['Drawdown']   = df['Close'] / df['Close'].cummax() - 1
-        df['Target']     = (df['Close'].shift(-10) / df['Close'] - 1 > TARGET_HAUSSE).astype(int)
+        
+        # ✅ TYPO FIX: Changed TARGET_HAUSSE to ML_TARGET_HAUSSE
+        df['Target']     = (df['Close'].shift(-10) / df['Close'] - 1 > ML_TARGET_HAUSSE).astype(int)
         df['ATR']        = calculer_atr(df, ATR_PERIOD)
         df = df.dropna()
 
         features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
-        split    = int(len(df) * 0.85)
+        
+        # ✅ LIVE QUANT TRAINING (Anti-Overfit)
+        X_train = df[features].iloc[:-1]
+        y_train = df['Target'].iloc[:-1]
 
-        model = RandomForestClassifier(n_estimators=100, max_depth=5, random_state=42)
-        model.fit(df[features].iloc[:split], df['Target'].iloc[:split])
+        model = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=30, random_state=42)
+        model.fit(X_train, y_train)
 
         last  = df.iloc[-1]
         proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
 
-        trend_ok = float(last['Close'])   > float(last['MA200'])
-        mom_ok   = float(last['Mom_20j']) > 1.00
-        ia_ok    = proba > SEUIL_IA_FIXE
-
-        signal   = trend_ok and mom_ok and ia_ok
+        # ✅ IA PURE : Seulement la probabilité compte (plus de filtres)
+        signal   = proba > SEUIL_IA_FIXE
         vol_ann  = float(last['Volatility']) * np.sqrt(252)
         alloc    = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
         prix     = float(last['Close'])
@@ -239,6 +239,12 @@ def executer_trades(portfolio, settings):
 
     for ticker in TICKERS:
         signal, proba, allocation, prix, atr = calculer_signal(ticker)
+        
+        # ✅ THE 0.0 PRICE BUG FIX
+        if prix <= 0.0:
+            print(f"⚠️ Yahoo Finance API Bug for {ticker} (Price is 0.0). Skipping to protect portfolio.")
+            continue
+            
         position_ouverte = ticker in portfolio['positions']
         action_str       = "⚪ CASH"
         detail           = ""
