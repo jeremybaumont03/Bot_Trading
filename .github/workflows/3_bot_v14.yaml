@@ -1,0 +1,54 @@
+name: V14 Prop Desk Engine
+
+on:
+  schedule:
+    # 21h30 UTC = 23h30 Paris (Tourne 15 min APRÈS tes 7 bots classiques)
+    - cron: '30 21 * * 1-5'
+  workflow_dispatch:
+
+jobs:
+  run-v14:
+    runs-on: ubuntu-latest
+    
+    # 🚨 Droit d'écriture pour sauvegarder le portfolio V14
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Installation Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Installation des dépendances
+        run: |
+          pip install --upgrade pip
+          pip install yfinance pandas numpy scikit-learn requests
+
+      - name: 🚀 Lancement de la V14 (Observability Layer)
+        env:
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python entraineur_v14.py
+
+      - name: 💾 Sauvegarde du Portfolio V14
+        run: |
+          git config --global user.name "Trading Bot V14"
+          git config --global user.email "v14@trading.local"
+          
+          # On ajoute uniquement le fichier de la V14
+          git add portfolio_v14.json || true
+          
+          if ! git diff --staged --quiet; then
+            git commit -m "📊 MAJ Portfolio V14 - $(date '+%d/%m/%Y %H:%M')"
+            git pull --rebase origin main
+            git push
+          else
+            echo "Aucun changement à sauvegarder aujourd'hui pour la V14."
+          fi
