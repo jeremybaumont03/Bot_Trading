@@ -34,7 +34,7 @@ jobs:
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python entraineur_v14.py
+        run: entraineur_retail.py
 
       - name: 💾 Sauvegarde Portfolio et Modèles .joblib
         run: |
