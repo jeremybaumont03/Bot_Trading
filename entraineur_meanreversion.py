@@ -24,7 +24,14 @@ TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # ── CONFIGURATION ─────────────────────────────────────────────────────────────
-TICKERS        = ["NVDA", "AAPL", "BTC-USD", "GLD", "TSLA", "MSFT", "SPY", "TLT"]
+TICKERS = [
+    "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "NFLX",
+    "AMD", "INTC", "TSM", "QCOM",
+    "JPM", "V", "BAC", "GS",
+    "WMT", "JNJ", "PG", "HD", "DIS",
+    "BTC-USD", "ETH-USD",
+    "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
+]
 CAPITAL_DEPART = 1000.0
 FRAIS          = 0.001       # 0.1% par trade
 SLIPPAGE       = 0.0005      # 0.05% slippage
