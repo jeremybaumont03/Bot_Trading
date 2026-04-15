@@ -1,13 +1,10 @@
 """
-BOT DE PAPER TRADING — V2 RANDOM FOREST (Standard ATR HYBRIDE)
-Améliorations vs V1 :
-  - Univers étendu : 31 Tickers
-  - Confiance pure en l'IA : Suppression des filtres MA200/Momentum
-  - Seuil réaliste (55%)
-  - ATR Dynamique : TP et SL calculés en fonction de la volatilité
-  - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
-  - Shadow Logging (Logs des probas IA)
-  - Corrections V2.2 : import sys, sortie IA corrigée, FIX ANTI-OVERFITTING (Live Quant), FIX PRIX 0.0.
+BOT DE PAPER TRADING — entraineur_v14_observability.py (PROP DESK V14.1)
+Observability Layer : 
+  ✅ Journal Analytique : Enregistrement des empreintes génétiques de chaque trade (Regime, Proba, EV, ATR).
+  ✅ Métriques Quantitatives : Calcul en direct du Profit Factor, Sharpe Ratio, et R/R réalisé.
+  ✅ Logique ML & Risk strictement identique à la V14 Safe Run.
+  🧠 CONNECTÉ AU MASTER BRAIN (Darwin + Macro)
 """
 
 import yfinance as yf
@@ -15,427 +12,445 @@ import pandas as pd
 import numpy as np
 import json
 import os
+import sys
 import shutil
 import requests
-import sys  
 from datetime import datetime
+from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.preprocessing import RobustScaler
+from sklearn.pipeline import Pipeline
 
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# ── CONFIGURATION ─────────────────────────────────────────────────────────────
+# ── CONFIGURATION DES ACTIFS ──────────────────────────────────────────────────
 TICKERS = [
     "AAPL", "MSFT", "NVDA", "GOOGL", "AMZN", "META", "TSLA", "NFLX",
-    "AMD", "INTC", "TSM", "QCOM",
-    "JPM", "V", "BAC", "GS",
-    "WMT", "JNJ", "PG", "HD", "DIS",
-    "BTC-USD", "ETH-USD",
+    "AMD", "INTC", "TSM", "QCOM", "JPM", "V", "BAC", "GS",
+    "WMT", "JNJ", "PG", "HD", "DIS", "BTC-USD", "ETH-USD",
     "SPY", "QQQ", "IWM", "TLT", "GLD", "XLK", "XLF",
 ]
 
 CAPITAL_DEPART   = 1000.0
-FRAIS            = 0.001       # 0.1% par trade
-SLIPPAGE         = 0.0005      # 0.05% slippage
-VOL_TARGET       = 0.15        # cible volatilité annualisée
+FRAIS            = 0.001
+SLIPPAGE         = 0.0005
 MAX_POSITIONS    = 3
-
-# ✅ PARAMÈTRES IA & ATR HYBRIDE
-SEUIL_IA_FIXE    = 0.55        # l'IA doit être sûre à 55% minimum
-ML_TARGET_HAUSSE = 0.01        # Cible d'entraînement IA (+1% en 10j)
 ATR_PERIOD       = 14
 
-DEFAULT_ATR_TP_MULT = 2.0    # Fallback TP
-DEFAULT_ATR_SL_MULT = 1.5    # Fallback SL
+# ── PARAMÈTRES V14 LITE ───────────────────────────────────────────────────────
+BASE_SEUIL_ENSEMBLE = 0.55    
+MIN_TRADES_30D      = 5       
+MAX_DD_LIMIT        = -0.15
+MAX_CVAR_95         = -0.04   
+COOLDOWN_JOURS      = 3
+KELLY_FRACTION      = 0.5
+MAX_ALLOC_PAR_TRADE = 0.25
+MIN_ALLOC_PAR_TRADE = 0.02
+CORR_MAX            = 0.75
+VOL_TARGET          = 0.15
+BASE_ATR_TP_MULT    = 2.0
+BASE_ATR_SL_MULT    = 1.5
 
-# ── CONFIGURATION DES CHEMINS ──
-BASE_DIR       = os.path.dirname(os.path.abspath(__file__))
-FICHIER        = os.path.join(BASE_DIR, "portfolio.json")
-DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
-SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
+# ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
+BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
+FICHIER         = os.path.join(BASE_DIR, "portfolio_v14_safe.json")
+DOSSIER_BACKUP  = os.path.join(BASE_DIR, "backups")
+SETTINGS_FILE   = os.path.join(BASE_DIR, "global_settings.json")
 
-# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
-def charger_settings():
+# ── TRANSFORMER WINSORIZATION CUSTOM ──────────────────────────────────────────
+class Winsorizer(BaseEstimator, TransformerMixin):
+    def __init__(self, limits=(0.01, 0.01)):
+        self.limits = limits
+        self.lower_bounds_ = None
+        self.upper_bounds_ = None
+
+    def fit(self, X, y=None):
+        self.lower_bounds_ = np.nanpercentile(X, self.limits[0] * 100, axis=0)
+        self.upper_bounds_ = np.nanpercentile(X, 100 - (self.limits[1] * 100), axis=0)
+        return self
+
+    def transform(self, X):
+        return np.clip(X, self.lower_bounds_, self.upper_bounds_)
+
+# ── GESTION DE LA DONNÉE (SANS CACHE LOCAL INUTILE) ───────────────────────────
+DF_CACHE = {}
+
+def charger_donnees():
+    print("⚡ Téléchargement des données (YFinance Batch)...")
     try:
-        with open(SETTINGS_FILE, "r") as f:
-            settings = json.load(f)
-
-        if not settings.get("master_switch_active", True):
-            print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille")
-            return None
-
-        atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
-        atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
-        risk   = settings.get("risk_multiplier", 1.0)
-        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
-        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
-
-    except FileNotFoundError:
-        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        data = yf.download(TICKERS, period="6y", interval="1d", progress=False, group_by="ticker")
+        for ticker in TICKERS:
+            try:
+                df_ticker = data[ticker].dropna() if isinstance(data.columns, pd.MultiIndex) else data.dropna()
+                if len(df_ticker) > 300 and (df_ticker['Close'].isna().sum() / len(df_ticker) <= 0.20):
+                    DF_CACHE[ticker] = df_ticker
+            except: pass
     except Exception as e:
-        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"❌ Erreur globale YFinance : {e}")
 
-# ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
-def envoyer_alerte_telegram(message):
-    if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
-        print("ℹ️ Telegram non configuré — alerte ignorée")
-        return
-    try:
-        url     = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-        payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
-        requests.post(url, data=payload, timeout=10)
-        print("📱 Alerte Telegram envoyée")
-    except Exception as e:
-        print(f"⚠️ Erreur Telegram : {e}")
+    if "SPY" not in DF_CACHE:
+        print("❌ ERREUR CRITIQUE : SPY introuvable. Moteur Macro désactivé.")
+        sys.exit(1)
 
-# ── BACKUP ────────────────────────────────────────────────────────────────────
+def get_prix(ticker):
+    return float(DF_CACHE[ticker]['Close'].iloc[-1]) if ticker in DF_CACHE else 0.0
+
+def calculer_nav(portfolio):
+    nav = portfolio['capital_cash']
+    for t, pos in portfolio['positions'].items():
+        px = get_prix(t)
+        nav += pos['quantite'] * px if px > 0 else pos['mise']
+    return nav
+
+# ── UNSUPERVISED REGIME DETECTION ─────────────────────────────────────────────
+def detecter_regime_macro():
+    spy = DF_CACHE['SPY']
+    ma200 = spy['Close'].rolling(200).mean().iloc[-1]
+    prix_actuel = spy['Close'].iloc[-1]
+    vol_20j = spy['Close'].pct_change().rolling(20).std().iloc[-1] * np.sqrt(252)
+    
+    if prix_actuel < ma200 and vol_20j > 0.18: return "BEAR"
+    elif prix_actuel > ma200 and vol_20j < 0.15: return "BULL"
+    else: return "CHOP"
+
+# ── RISK ENGINE (Log Returns CVaR) ────────────────────────────────────────────
+def calculer_kelly(proba_gain, ratio_gain_perte):
+    p, b = max(0.01, min(0.99, proba_gain)), max(0.1, ratio_gain_perte)
+    return max(0.0, (p - (1 - p) / b) * KELLY_FRACTION)
+
+def calculer_cvar_portefeuille(portfolio_positions, new_ticker, new_weight_cible, nav_actuelle):
+    tickers_valides, weights_bruts = [], []
+    for t, pos in portfolio_positions.items():
+        px = get_prix(t)
+        if px > 0 and t in DF_CACHE:
+            tickers_valides.append(t)
+            weights_bruts.append((pos['quantite'] * px) / nav_actuelle)
+            
+    if new_ticker in DF_CACHE:
+        tickers_valides.append(new_ticker)
+        weights_bruts.append(new_weight_cible)
+    else: return 0.0 
+        
+    if not tickers_valides: return 0.0
+
+    sum_w = sum(weights_bruts)
+    weights = [w / sum_w for w in weights_bruts] if sum_w > 0 else weights_bruts
+    df_returns = pd.DataFrame()
+    
+    for t in tickers_valides:
+        df_returns[t] = np.log(DF_CACHE[t]['Close'] / DF_CACHE[t]['Close'].shift(1)).tail(120)
+            
+    df_returns = df_returns.dropna()
+    if len(df_returns) < 20: return 0.0 
+    
+    port_returns = df_returns.dot(weights)
+    sorted_returns = np.sort(port_returns)
+    index = int(0.05 * len(sorted_returns))
+    return np.mean(sorted_returns[:max(1, index)])
+
+def verifier_correlation(ticker_candidat, positions_ouvertes):
+    if not positions_ouvertes: return True, "OK"
+    df_cand = DF_CACHE.get(ticker_candidat)
+    if df_cand is None or len(df_cand) < 120: return True, "OK"
+    
+    rend_cand = np.log(df_cand['Close'] / df_cand['Close'].shift(1)).tail(120).dropna() 
+    for t_pos in positions_ouvertes:
+        if DF_CACHE.get(t_pos) is None: continue
+        rend_pos = np.log(DF_CACHE[t_pos]['Close'] / DF_CACHE[t_pos]['Close'].shift(1)).tail(120).dropna()
+        common = rend_cand.index.intersection(rend_pos.index)
+        if len(common) >= 30 and abs(rend_cand[common].corr(rend_pos[common])) > CORR_MAX:
+            return False, f"Corrélé à {t_pos}"
+    return True, "OK"
+
+# ── PIPELINE ML V14 LITE (Rapide & Robuste) ───────────────────────────────────
+def creer_features_v14(df, is_spy=False):
+    df = df.copy()
+    df['MA50'] = df['Close'].rolling(50).mean()
+    df['MA200'] = df['Close'].rolling(200).mean()
+    df['Volatility'] = df['Close'].pct_change().rolling(20).std()
+    df['Mom_10j'] = df['Close'] / df['Close'].shift(10)
+    df['Mom_60j'] = df['Close'] / df['Close'].shift(60)
+    df['Drawdown'] = df['Close'] / df['Close'].cummax() - 1
+    
+    delta = df['Close'].diff()
+    gain = delta.where(delta > 0, 0).rolling(14).mean()
+    loss = (-delta.where(delta < 0, 0)).rolling(14).mean()
+    df['RSI'] = 100 - (100 / (1 + gain / (loss + 1e-10)))
+    df['ATR'] = (pd.concat([df['High']-df['Low'], (df['High']-df['Close'].shift()).abs(), (df['Low']-df['Close'].shift()).abs()], axis=1).max(axis=1)).rolling(14).mean()
+    df['ATR_ratio'] = df['ATR'] / (df['Close'] + 1e-10)
+    df['MACD'] = (df['Close'].ewm(span=12).mean() - df['Close'].ewm(span=26).mean()) / (df['Close'] + 1e-10)
+    df['Vol_regime'] = df['Volatility'].rolling(5).mean() / (df['Volatility'].rolling(60).mean() + 1e-10)
+    
+    if 'SPY' in DF_CACHE:
+        spy_df = DF_CACHE['SPY']
+        spy_trend = ((spy_df['Close'].rolling(200).mean() / spy_df['Close'].rolling(200).mean().shift(20)) - 1).shift(1)
+        spy_vix = (spy_df['Close'].pct_change().rolling(20).std() * np.sqrt(252)).shift(1)
+        spy_close_t1 = spy_df['Close'].shift(1)
+        
+        df['SPY_Trend'] = spy_trend.reindex(df.index)
+        df['SPY_VIX_Proxy'] = spy_vix.reindex(df.index)
+        df['Rel_SPY'] = df['Close'] / spy_close_t1.reindex(df.index) if not is_spy else 1.0
+    else:
+        df['SPY_Trend'], df['SPY_VIX_Proxy'], df['Rel_SPY'] = 0.0, 0.15, 1.0
+
+    df['Target_5j']  = (df['Close'].shift(-5)  / df['Close'] - 1) - (FRAIS + SLIPPAGE)
+    df['Target_10j'] = (df['Close'].shift(-10) / df['Close'] - 1) - (FRAIS + SLIPPAGE)
+    df['Target_20j'] = (df['Close'].shift(-20) / df['Close'] - 1) - (FRAIS + SLIPPAGE)
+    df['Target_Raw'] = ((df['Target_5j'] > 0.01) | (df['Target_10j'] > 0.015) | (df['Target_20j'] > 0.02)).astype(int)
+    
+    return df
+
+def analyser_opportunite(ticker, seuil_dynamique, est_en_position):
+    if ticker not in DF_CACHE: return None
+    
+    df = creer_features_v14(DF_CACHE[ticker], is_spy=(ticker == "SPY"))
+    features = ['MA50', 'MA200', 'Volatility', 'Mom_10j', 'Mom_60j', 'Drawdown', 'RSI', 'ATR_ratio', 'MACD', 'Vol_regime', 'Rel_SPY', 'SPY_Trend', 'SPY_VIX_Proxy']
+    df = df.dropna(subset=['Rel_SPY'])
+    
+    df_train = df.iloc[:-20].dropna(subset=features + ['Target_Raw', 'Target_10j']) 
+    if len(df_train) < 100 or len(np.unique(df_train['Target_Raw'])) < 2: return None
+    
+    X_train, y_train = df_train[features].values, df_train['Target_Raw'].values
+    
+    # Exponential Weighting
+    weights = np.exp(np.linspace(-2, 0, len(y_train)))
+    
+    rf = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=10, random_state=42, n_jobs=-1)
+    
+    pipeline = Pipeline([
+        ('winsorizer', Winsorizer()), 
+        ('scaler', RobustScaler()), 
+        ('classifier', rf)
+    ])
+    
+    pipeline.fit(X_train, y_train, classifier__sample_weight=weights) 
+    
+    # Empirical EV
+    win_returns = df_train['Target_10j'][df_train['Target_Raw'] == 1]
+    loss_returns = df_train['Target_10j'][df_train['Target_Raw'] == 0]
+    
+    e_win = np.clip(win_returns.mean(), 0.005, 0.05) if len(win_returns) > 5 else 0.015
+    e_loss = np.clip(abs(loss_returns.mean()), 0.005, 0.05) if len(loss_returns) > 5 else 0.015
+
+    derniers_jours = df.iloc[-3:][features].copy().dropna()
+    if len(derniers_jours) < 2: return None
+    
+    proba_lisse = np.mean(pipeline.predict_proba(derniers_jours.values)[:, 1])
+    
+    seuil_effectif = seuil_dynamique - 0.02 if est_en_position else seuil_dynamique
+    if proba_lisse < seuil_effectif: return None
+
+    last_row = df.iloc[-1]
+    prix, atr, vol_ann = get_prix(ticker), max(0, float(last_row['ATR'])), float(last_row['Volatility']) * np.sqrt(252)
+    if atr <= 0 or vol_ann <= 0: return None
+
+    expected_value = (proba_lisse * e_win) - ((1 - proba_lisse) * e_loss)
+    
+    if expected_value <= 0: return None 
+
+    ratio_gp = e_win / e_loss
+    alloc_kelly = calculer_kelly(proba_lisse, ratio_gp)
+    alloc = min(MAX_ALLOC_PAR_TRADE, max(MIN_ALLOC_PAR_TRADE, alloc_kelly * (VOL_TARGET / (vol_ann + 1e-6))))
+
+    return {'ticker': ticker, 'proba': proba_lisse, 'ev': expected_value, 'alloc': alloc, 'atr': atr, 'prix': prix}
+
+def gerer_telegram(msg): 
+    if TOKEN_TELEGRAM and CHAT_ID_TELEGRAM:
+        try: requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", data={"chat_id": CHAT_ID_TELEGRAM, "text": msg, "parse_mode": "Markdown"}, timeout=10)
+        except: pass
+
 def faire_backup():
-    if not os.path.exists(FICHIER):
-        return  
-    try:
-        os.makedirs(DOSSIER_BACKUP, exist_ok=True)
-        date_str   = datetime.now().strftime("%Y-%m-%d")
-        nom_backup = f"portfolio_{date_str}.json"
-        dest       = os.path.join(DOSSIER_BACKUP, nom_backup)
-
-        if not os.path.exists(dest):
-            shutil.copy2(FICHIER, dest)
-            print(f"💾 Backup sauvegardé : {nom_backup}")
-        else:
-            print(f"ℹ️ Backup déjà à jour ({date_str}).")
-    except Exception as e:
-        print(f"⚠️ Erreur backup : {e}")
-
-# ── PORTFOLIO ─────────────────────────────────────────────────────────────────
-def charger_portfolio():
     if os.path.exists(FICHIER):
-        with open(FICHIER, "r") as f:
-            return json.load(f)
-    portfolio = {
-        "capital_depart"   : CAPITAL_DEPART,
-        "capital_cash"     : CAPITAL_DEPART,
-        "positions"        : {},
-        "historique"       : [],
-        "valeur_historique": [],
-        "logs_journaliers" : []
-    }
-    sauvegarder_portfolio(portfolio)
-    print(f"✅ Nouveau portfolio créé avec {CAPITAL_DEPART}€ virtuels")
+        os.makedirs(DOSSIER_BACKUP, exist_ok=True)
+        shutil.copy2(FICHIER, os.path.join(DOSSIER_BACKUP, f"portfolio_v14_{datetime.now().strftime('%Y-%m-%d')}.json"))
+
+# ── EXÉCUTION PRINCIPALE ──────────────────────────────────────────────────────
+def executer_trades():
+    if not os.path.exists(FICHIER):
+        with open(FICHIER, "w") as f: json.dump({"capital_depart": CAPITAL_DEPART, "capital_cash": CAPITAL_DEPART, "positions": {}, "historique": [], "valeur_historique": []}, f)
+    with open(FICHIER, "r") as f: portfolio = json.load(f)
+
+    aujourd_hui = datetime.now().strftime("%Y-%m-%d")
+    nav_actuelle = calculer_nav(portfolio)
+
+    hist_valeurs = [h['valeur'] for h in portfolio.get('valeur_historique', [])]
+    rendements = pd.Series(hist_valeurs).pct_change().dropna() if len(hist_valeurs) > 5 else pd.Series()
+    current_dd = (( (1+rendements).cumprod() - (1+rendements).cumprod().cummax() ) / (1+rendements).cumprod().cummax()).min() if not rendements.empty else 0.0
+    
+    regime = detecter_regime_macro()
+    seuil_dynamique = BASE_SEUIL_ENSEMBLE
+    atr_tp, atr_sl = BASE_ATR_TP_MULT, BASE_ATR_SL_MULT
+    
+    if regime == "BEAR":
+        seuil_dynamique += 0.03  
+        atr_tp *= 0.8            
+    elif regime == "BULL":
+        seuil_dynamique -= 0.02  
+        atr_tp *= 1.2            
+
+    trades_30d = [t for t in portfolio.get('historique', []) if (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(t.get('date_sortie', t['date_entree']), "%Y-%m-%d")).days <= 30]
+    if len(trades_30d) < MIN_TRADES_30D: seuil_dynamique = max(0.50, seuil_dynamique - 0.02)
+
+    cb_actif = False
+    if current_dd <= MAX_DD_LIMIT:
+        portfolio['circuit_breaker_date'] = aujourd_hui
+        cb_actif = True
+    elif portfolio.get('circuit_breaker_date'):
+        if (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(portfolio['circuit_breaker_date'], "%Y-%m-%d")).days < COOLDOWN_JOURS: cb_actif = True
+        else: portfolio['circuit_breaker_date'] = None
+
+    risk_adj = max(0.5, 1.0 - (current_dd / MAX_DD_LIMIT)) if current_dd < 0 else 1.0
+
+    print(f"\n📅 {aujourd_hui} — V14.1 OBSERVABILITY LAYER")
+    print(f"   Régime: {regime} | NAV: {nav_actuelle:.2f}€ | DD: {current_dd:.1%} | Seuil: {seuil_dynamique:.2f}")
+    if cb_actif: print("   🚨 CIRCUIT BREAKER ACTIF — ACHATS BLOQUÉS")
+    print("─" * 90)
+
+    # 1. GESTION DES SORTIES (Autopsie)
+    for ticker in list(portfolio['positions'].keys()):
+        pos = portfolio['positions'][ticker]
+        prix = get_prix(ticker)
+        if prix <= 0: continue
+        
+        rendement = (prix - pos['prix_achat']) / pos['prix_achat']
+        tp, sl = pos.get('tp_cible'), pos.get('sl_cible')
+        vendre, raison, emj = False, "", "🔴"
+        
+        if tp and prix >= tp: vendre, raison, emj = True, "TAKE PROFIT", "✅"
+        elif sl and prix <= sl: vendre, raison, emj = True, "STOP LOSS", "🛑"
+        else:
+            opp = analyser_opportunite(ticker, seuil_dynamique, est_en_position=True)
+            if opp is None: vendre, raison, emj = True, "SIGNAL DECAY", "🤖"
+
+        if vendre:
+            val_nette = (pos['quantite'] * prix) * (1 - (FRAIS + SLIPPAGE))
+            portfolio['capital_cash'] += val_nette
+            pnl = val_nette - pos['mise']
+            jours_detention = (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
+            
+            # 🚨 OBSERVABILITY : Enregistrement de l'autopsie
+            trade_log = {
+                "date_entree": pos['date_achat'],
+                "date_sortie": aujourd_hui,
+                "ticker": ticker,
+                "action": "VENTE",
+                "raison": raison,
+                "pnl": round(pnl, 2),
+                "pnl_pct": round(rendement, 4),
+                "jours_detention": jours_detention,
+                "regime_entree": pos.get('regime_macro', 'UNKNOWN'),
+                "proba_entree": pos.get('proba', 0),
+                "ev_entree": pos.get('ev', 0)
+            }
+            portfolio['historique'].append(trade_log)
+            del portfolio['positions'][ticker]
+            print(f"{ticker:<8} {'—':<6} {emj} VENDU ({raison:<10}) PnL:{pnl:+.0f}€")
+        else:
+            print(f"{ticker:<8} {'—':<6} 🔵 EN POSITION       PnL:{rendement*100:+.1f}%")
+
+    # 2. GESTION DES ENTRÉES (Empreinte Génétique & Master Brain)
+    if not cb_actif and len(portfolio['positions']) < MAX_POSITIONS:
+        candidats = []
+        for ticker in [t for t in TICKERS if t not in portfolio['positions']]:
+            opp = analyser_opportunite(ticker, seuil_dynamique, est_en_position=False)
+            if opp: candidats.append(opp)
+        
+        candidats = sorted(candidats, key=lambda x: x['ev'], reverse=True)
+        
+        for cand in candidats:
+            if len(portfolio['positions']) >= MAX_POSITIONS: break
+            
+            ticker, alloc, prix, atr = cand['ticker'], cand['alloc'], cand['prix'], cand['atr']
+            
+            if not verifier_correlation(ticker, list(portfolio['positions'].keys())): continue
+            if calculer_cvar_portefeuille(portfolio['positions'], ticker, alloc, nav_actuelle) < MAX_CVAR_95: continue
+                
+            # 🧠 --- LECTURE DU MASTER BRAIN --- 🧠
+            try:
+                with open(SETTINGS_FILE, "r") as f:
+                    settings = json.load(f)
+                    nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+                    alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
+                    risk_macro = settings.get("global_risk_multiplier", 1.0)
+            except:
+                alloc_darwin, risk_macro = 1.0, 1.0
+
+            alloc_finale = alloc * alloc_darwin * risk_macro
+            # 🧠 --------------------------------- 🧠
+
+            mise_nette = (nav_actuelle * alloc_finale * risk_adj) * (1 - FRAIS - SLIPPAGE)
+
+            if portfolio['capital_cash'] >= (mise_nette/(1-FRAIS-SLIPPAGE)) and mise_nette > 5:
+                portfolio['capital_cash'] -= (mise_nette / (1 - FRAIS - SLIPPAGE))
+                
+                # 🚨 OBSERVABILITY : Enregistrement de l'empreinte à l'achat
+                portfolio['positions'][ticker] = {
+                    "quantite": mise_nette / prix, 
+                    "prix_achat": prix, 
+                    "date_achat": aujourd_hui,
+                    "mise": mise_nette / (1 - FRAIS - SLIPPAGE), 
+                    "tp_cible": prix + (atr * atr_tp), 
+                    "sl_cible": prix - (atr * atr_sl), 
+                    "proba": cand['proba'], 
+                    "ev": cand['ev'],
+                    "atr_local": atr,
+                    "regime_macro": regime,
+                    "poids_portefeuille": alloc_finale
+                }
+                print(f"{ticker:<8} {cand['proba']:<6.0%} 🟢 ACHETÉ (EV:{cand['ev']:.4f})  TP:{prix+(atr*atr_tp):.2f}")
+
+    portfolio['valeur_historique'].append({"date": aujourd_hui, "valeur": round(calculer_nav(portfolio), 2)})
+    with open(FICHIER, "w") as f: json.dump(portfolio, f, indent=2)
     return portfolio
 
-def sauvegarder_portfolio(portfolio):
-    with open(FICHIER, "w") as f:
-        json.dump(portfolio, f, indent=2, default=str)
-
-# ── ATR ───────────────────────────────────────────────────────────────────────
-def calculer_atr(df, period=14):
-    high_low    = df['High'] - df['Low']
-    high_close  = (df['High'] - df['Close'].shift()).abs()
-    low_close   = (df['Low']  - df['Close'].shift()).abs()
-    true_range  = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
-    return true_range.rolling(window=period).mean()
-
-# ── SIGNAL ────────────────────────────────────────────────────────────────────
-def calculer_signal(ticker):
-    try:
-        df = yf.download(ticker, period="6y", interval="1d", progress=False)
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        if len(df) < 250:
-            return False, 0.0, 0.0, 0.0, 0.0
-
-        df['MA50']       = df['Close'].rolling(50).mean()
-        df['MA200']      = df['Close'].rolling(200).mean()
-        df['Volatility'] = df['Close'].pct_change().rolling(20).std()
-        df['Mom_20j']    = df['Close'] / df['Close'].shift(20)
-        df['Drawdown']   = df['Close'] / df['Close'].cummax() - 1
-        # Entraînement sur une cible fixe de 1%
-        df['Target']     = (df['Close'].shift(-10) / df['Close'] - 1 > ML_TARGET_HAUSSE).astype(int)
-        df['ATR']        = calculer_atr(df, ATR_PERIOD)
-        df = df.dropna()
-
-        features = ['MA50', 'MA200', 'Volatility', 'Mom_20j', 'Drawdown']
-        
-        # ✅ FIX PRO : Entraînement sur TOUT l'historique jusqu'à hier ([:-1])
-        X_train = df[features].iloc[:-1]
-        y_train = df['Target'].iloc[:-1]
-
-        # ✅ FIX ANTI-OVERFITTING : On bride l'arbre (max_depth=3, min_samples_leaf=30)
-        model = RandomForestClassifier(n_estimators=100, max_depth=3, min_samples_leaf=30, random_state=42)
-        model.fit(X_train, y_train)
-
-        last  = df.iloc[-1]
-        proba = model.predict_proba(df[features].iloc[[-1]])[0][1]
-
-        signal  = proba > SEUIL_IA_FIXE
-        vol_ann = float(last['Volatility']) * np.sqrt(252)
-        alloc   = min(0.20, VOL_TARGET / vol_ann) if (signal and vol_ann > 0) else 0.0
-        prix    = float(last['Close'])
-        atr     = float(last['ATR'])
-
-        return signal, round(proba, 4), round(alloc, 4), round(prix, 4), round(atr, 4)
-
-    except Exception as e:
-        print(f"  ⚠️  Erreur {ticker} : {e}")
-        return False, 0.0, 0.0, 0.0, 0.0
-
-# ── VALEUR DU PORTFOLIO ───────────────────────────────────────────────────────
-def calculer_valeur_totale(portfolio):
-    valeur = portfolio['capital_cash']
-    for ticker, pos in portfolio['positions'].items():
-        try:
-            prix = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
-            valeur += prix * pos.get('quantite', pos['mise'] / pos['prix_achat'])
-        except:
-            valeur += pos['mise']
-    return round(valeur, 2)
-
-# ── MÉTRIQUES DE PERFORMANCE ──────────────────────────────────────────────────
-def calculer_metriques(portfolio):
-    historique = portfolio.get('valeur_historique', [])
-    if len(historique) < 5:
-        return None, None
-    valeurs    = [h['valeur'] for h in historique]
-    rendements = pd.Series(valeurs).pct_change().dropna()
-    sharpe = rendements.mean() / rendements.std() * np.sqrt(252) if rendements.std() > 0 else 0.0
-    cumul  = (1 + rendements).cumprod()
-    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min()
-    return round(sharpe, 3), round(max_dd, 4)
-
-# ── TRADES ────────────────────────────────────────────────────────────────────
-def executer_trades(portfolio, settings):
-    aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
-    trades_du_jour = []
-
-    atr_tp_mult = settings["atr_tp"]
-    atr_sl_mult = settings["atr_sl"]
-    risk_mult   = settings["risk"]
-
-    if 'logs_journaliers' not in portfolio:
-        portfolio['logs_journaliers'] = []
-
-    print(f"\n📅 Analyse du {aujourd_hui} — Random Forest (V2 ATR Hybride)")
-    print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
-    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
-    print("─" * 90)
-    print(f"{'ACTIF':<10} {'IA%':<7} {'ATR':<8} {'SIGNAL':<12} {'ACTION':<20} {'DÉTAIL'}")
-    print("─" * 90)
-
-    for ticker in TICKERS:
-        signal, proba, allocation, prix, atr = calculer_signal(ticker)
-        
-        # ✅ FIX PRIX 0.0 : Sécurité anti-crash Yahoo Finance
-        if prix <= 0.0:
-            print(f"⚠️ Bug API Yahoo Finance pour {ticker} (Prix 0.0). On ignore.")
-            continue
-            
-        position_ouverte = ticker in portfolio['positions']
-        action_str       = "⚪ CASH"
-        detail           = ""
-
-        portfolio['logs_journaliers'].append({
-            "date"          : aujourd_hui,
-            "ticker"        : ticker,
-            "proba_ia"      : proba,
-            "signal_valide" : bool(signal)
-        })
-        portfolio['logs_journaliers'] = portfolio['logs_journaliers'][-1000:]
-
-        # ── VÉRIFICATION TP / SL DYNAMIQUE ──────────────────────
-        if position_ouverte:
-            pos        = portfolio['positions'][ticker]
-            prix_achat = pos['prix_achat']
-            tp_cible   = pos.get('tp_cible')
-            sl_cible   = pos.get('sl_cible')
-            rendement  = (prix - prix_achat) / prix_achat
-
-            vendre = False
-            raison = ""
-
-            if tp_cible and prix >= tp_cible:
-                vendre, raison = True, "TAKE PROFIT"
-                emoji = "✅"
-            elif sl_cible and prix <= sl_cible:
-                vendre, raison = True, "STOP LOSS"
-                emoji = "🛑"
-            elif not signal: # ✅ L'IA PEUT COUPER SES PERTES
-                vendre, raison = True, "SIGNAL IA"
-                emoji = "🤖"
-
-            if vendre:
-                quantite     = pos.get('quantite', pos['mise'] / prix_achat)
-                valeur_vente = quantite * prix
-                frais_vente  = valeur_vente * (FRAIS + SLIPPAGE)
-                valeur_nette = valeur_vente - frais_vente
-                pnl_net      = valeur_nette - pos['mise']
-                duree_jours  = (datetime.now() - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
-
-                portfolio['capital_cash'] += valeur_nette
-
-                trade = {
-                    "date"          : aujourd_hui,
-                    "ticker"        : ticker,
-                    "action"        : "VENTE",
-                    "raison"        : raison,
-                    "prix"          : prix,
-                    "quantite"      : round(quantite, 6),
-                    "valeur"        : round(valeur_nette, 2),
-                    "pnl"           : round(pnl_net, 2),
-                    "pnl_pct"       : round(rendement * 100, 2),
-                    "frais"         : round(frais_vente, 2),
-                    "duree_jours"   : duree_jours,
-                    "atr_lors_achat": pos.get('atr_lors_achat', 0)
-                }
-                portfolio['historique'].append(trade)
-                trades_du_jour.append(trade)
-                del portfolio['positions'][ticker]
-                action_str       = f"{emoji} VENDU ({raison})"
-                detail           = f"PnL: {pnl_net:+.0f}€ ({rendement*100:+.1f}%)"
-                position_ouverte = False
-
-        # ── ACHAT HYBRIDE ──────────────────────────────────────────────────
-        if signal and not position_ouverte:
-            if len(portfolio['positions']) >= MAX_POSITIONS:
-                action_str = "🚫 MAX ATTEINT"
-                detail     = f"({MAX_POSITIONS} positions max)"
-            elif atr == 0.0:
-                action_str = "⚠️ ATR INDISPONIBLE"
-            else:
-                mise_brute  = portfolio['capital_cash'] * allocation * risk_mult
-                frais_achat = mise_brute * (FRAIS + SLIPPAGE)
-                mise_nette  = mise_brute - frais_achat
-
-                if portfolio['capital_cash'] >= mise_brute and mise_nette > 5:
-                    quantite = mise_nette / prix
-                    tp_cible = round(prix + (atr * atr_tp_mult), 4)
-                    sl_cible = round(prix - (atr * atr_sl_mult), 4)
-
-                    portfolio['capital_cash'] -= mise_brute
-                    portfolio['positions'][ticker] = {
-                        "quantite"      : round(quantite, 6),
-                        "prix_achat"    : prix,
-                        "date_achat"    : aujourd_hui,
-                        "mise"          : round(mise_brute, 2),
-                        "tp_cible"      : tp_cible,
-                        "sl_cible"      : sl_cible,
-                        "atr_lors_achat": atr,
-                        "atr_tp_mult"   : atr_tp_mult,
-                        "atr_sl_mult"   : atr_sl_mult
-                    }
-                    trade = {
-                        "date"    : aujourd_hui,
-                        "ticker"  : ticker,
-                        "action"  : "ACHAT",
-                        "prix"    : prix,
-                        "quantite": round(quantite, 6),
-                        "mise"    : round(mise_brute, 2),
-                        "frais"   : round(frais_achat, 2),
-                        "tp_cible": tp_cible,
-                        "sl_cible": sl_cible,
-                        "atr"     : atr
-                    }
-                    portfolio['historique'].append(trade)
-                    trades_du_jour.append(trade)
-                    action_str = "🟢 ACHETÉ"
-                    detail     = f"{mise_brute:.0f}€ @ {prix:.2f} | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
-                else:
-                    action_str = "⚠️ CASH INSUFFISANT"
-
-        # ── EN POSITION ────────────────────────────────────────────────────
-        elif position_ouverte and ticker in portfolio['positions']:
-            pos       = portfolio['positions'][ticker]
-            rendement = (prix - pos['prix_achat']) / pos['prix_achat']
-            tp_cible  = pos.get('tp_cible', 0)
-            sl_cible  = pos.get('sl_cible', 0)
-            action_str = "🔵 EN POSITION"
-            detail     = f"PnL:{rendement*100:+.1f}% | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
-
-        signal_txt = "🟢 ACHAT" if signal else "⚪ CASH"
-        atr_txt    = f"{atr:.2f}" if atr > 0 else "N/A"
-        print(f"{ticker:<10} {proba:<7.0%} {atr_txt:<8} {signal_txt:<12} {action_str:<20} {detail}")
-
-    return portfolio, trades_du_jour
-
-# ── RÉSUMÉ ────────────────────────────────────────────────────────────────────
-def afficher_resume(portfolio):
+# ── RÉSUMÉ & ANALYTIQUE (Le Dashboard du Quant) ───────────────────────────────
+def afficher_resume_analytique(portfolio):
     aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
-    valeur_totale = calculer_valeur_totale(portfolio)
+    valeur_totale = calculer_nav(portfolio)
     perf_totale   = (valeur_totale - portfolio['capital_depart']) / portfolio['capital_depart'] * 100
 
-    portfolio['valeur_historique'].append({"date": aujourd_hui, "valeur": valeur_totale})
-
-    trades_fermes = [t for t in portfolio['historique'] if t['action'] == 'VENTE']
+    trades_fermes = [t for t in portfolio['historique'] if t.get('action') == 'VENTE']
     nb_trades     = len(trades_fermes)
-    wins          = [t for t in trades_fermes if t.get('pnl', 0) > 0]
-    stop_losses   = [t for t in trades_fermes if t.get('raison') == 'STOP LOSS']
-    take_profits  = [t for t in trades_fermes if t.get('raison') == 'TAKE PROFIT']
-    win_rate      = len(wins) / nb_trades * 100 if nb_trades > 0 else 0
-
-    sharpe, max_dd = calculer_metriques(portfolio)
+    
+    # 🚨 ANALYTIQUES AVANCÉES
+    wins = [t for t in trades_fermes if t.get('pnl', 0) > 0]
+    losses = [t for t in trades_fermes if t.get('pnl', 0) <= 0]
+    
+    win_rate = (len(wins) / nb_trades * 100) if nb_trades > 0 else 0
+    gross_profit = sum(t.get('pnl', 0) for t in wins)
+    gross_loss = abs(sum(t.get('pnl', 0) for t in losses))
+    profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else (99.9 if gross_profit > 0 else 0)
+    
+    avg_win = np.mean([t.get('pnl_pct', 0) for t in wins]) * 100 if wins else 0
+    avg_loss = np.mean([t.get('pnl_pct', 0) for t in losses]) * 100 if losses else 0
+    
+    hist_valeurs = [h['valeur'] for h in portfolio.get('valeur_historique', [])]
+    rendements = pd.Series(hist_valeurs).pct_change().dropna() if len(hist_valeurs) > 5 else pd.Series()
+    sharpe = rendements.mean() / rendements.std() * np.sqrt(252) if len(rendements) > 0 and rendements.std() > 0 else 0.0
+    max_dd = (( (1+rendements).cumprod() - (1+rendements).cumprod().cummax() ) / (1+rendements).cumprod().cummax()).min() if not rendements.empty else 0.0
 
     print("\n" + "═" * 75)
-    print(f"💼 RÉSUMÉ RF Standard (V2 ATR Hybride) — {aujourd_hui}")
+    print(f"📊 DASHBOARD ANALYTIQUE V14.1 — {aujourd_hui}")
     print("═" * 75)
-    print(f"  Capital de départ   : {portfolio['capital_depart']:.2f} €")
-    print(f"  Valeur actuelle     : {valeur_totale:.2f} €")
-    print(f"  Performance totale  : {perf_totale:+.2f}%")
-    print(f"  Cash disponible     : {portfolio['capital_cash']:.2f} €")
-    print(f"  Positions ouvertes  : {len(portfolio['positions'])} / {MAX_POSITIONS}")
-    print(f"  Trades fermés       : {nb_trades} (TP: {len(take_profits)} | SL: {len(stop_losses)})")
-    print(f"  Win rate            : {win_rate:.0f}%")
-
-    if sharpe is not None:
-        interpretation = "✅ Bon" if sharpe > 1 else ("⚠️ Moyen" if sharpe > 0 else "❌ Négatif")
-        print(f"  Sharpe Ratio        : {sharpe:.2f} {interpretation}")
-        print(f"  Max Drawdown        : {max_dd:.1%}")
-
-    if portfolio['positions']:
-        print("\n  📂 Positions ouvertes :")
-        for ticker, pos in portfolio['positions'].items():
-            try:
-                prix_actuel = float(yf.download(ticker, period="2d", interval="1d", progress=False)['Close'].iloc[-1])
-                rendement   = (prix_actuel - pos['prix_achat']) / pos['prix_achat'] * 100
-                tp_cible    = pos.get('tp_cible', 0)
-                sl_cible    = pos.get('sl_cible', 0)
-                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f} → {rendement:+.1f}% | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}")
-            except:
-                print(f"    {ticker:<8} @ {pos['prix_achat']:.2f}")
-
+    print(f"  NAV actuelle         : {valeur_totale:.2f} € ({perf_totale:+.2f}%)")
+    print(f"  Cash disponible      : {portfolio['capital_cash']:.2f} €")
+    print(f"  Positions ouvertes   : {len(portfolio['positions'])} / {MAX_POSITIONS}")
+    print("-" * 75)
+    print(f"  Trades fermés        : {nb_trades} (Win rate: {win_rate:.0f}%)")
+    print(f"  Profit Factor        : {profit_factor:.2f}")
+    print(f"  Avg Win / Avg Loss   : {avg_win:+.2f}% / {avg_loss:+.2f}%")
+    print(f"  Sharpe Ratio         : {sharpe:.2f} | Max Drawdown : {max_dd:.1%}")
     print("═" * 75)
+    
+    msg_tg = f"📊 *DASHBOARD V14.1*\n💰 NAV: {valeur_totale:.2f}€\n📈 WinRate: {win_rate:.0f}%\n⚖️ ProfitFactor: {profit_factor:.2f}\n📉 MaxDD: {max_dd:.1%}"
+    gerer_telegram(msg_tg)
+    
     return portfolio
 
-# ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    print("🤖 BOT PAPER TRADING V2 - RANDOM FOREST (ATR HYBRIDE)")
-    print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-    print(f"   Seuil IA : {SEUIL_IA_FIXE:.0%} | Max pos : {MAX_POSITIONS}\n")
-
     faire_backup()
-
-    settings = charger_settings()
-    if settings is None:
-        print("🛑 Master Switch OFF — arrêt du bot.")
-        sys.exit(0)  
-
-    portfolio         = charger_portfolio()
-    portfolio, trades = executer_trades(portfolio, settings)
-    portfolio         = afficher_resume(portfolio)
-    sauvegarder_portfolio(portfolio)
-
-    val_fin = calculer_valeur_totale(portfolio)
-
-    if trades:
-        lignes = []
-        for t in trades:
-            if t['action'] == 'ACHAT':
-                lignes.append(f"🟢 ACHAT {t['ticker']} @ {t['prix']:.2f} | TP:{t.get('tp_cible',0):.2f} | SL:{t.get('sl_cible',0):.2f} | ATR:{t.get('atr',0):.2f}")
-            elif t['action'] == 'VENTE':
-                emoji = {"TAKE PROFIT": "✅", "STOP LOSS": "🛑", "SIGNAL IA": "🤖"}.get(t.get('raison', ''), "🔴")
-                lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€ ({t.get('raison', '')})")
-        msg = "\n".join(lignes)
-        envoyer_alerte_telegram(f"🚀 *RF Standard ATR — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
-    else:
-        envoyer_alerte_telegram(f"😴 *RF Standard ATR — Scan terminé*\nAucun mouvement.\n💰 Portfolio : {val_fin:.2f}€")
+    charger_donnees()
+    p = executer_trades()
+    afficher_resume_analytique(p)
