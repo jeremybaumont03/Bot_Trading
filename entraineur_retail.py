@@ -372,7 +372,21 @@ def executer_trades():
             if not verifier_correlation(ticker, list(portfolio['positions'].keys())): continue
             if calculer_cvar_portefeuille(portfolio['positions'], ticker, alloc, nav_actuelle) < MAX_CVAR_95: continue
                 
-            mise_nette = (nav_actuelle * alloc * risk_adj) * (1 - FRAIS - SLIPPAGE)
+            # 🧠 --- LECTURE DU MASTER BRAIN --- 🧠
+            try:
+                with open(os.path.join(BASE_DIR, "global_settings.json"), "r") as f:
+                    settings = json.load(f)
+                    nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+                    alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0) 
+                    risk_macro = settings.get("global_risk_multiplier", 1.0)
+            except:
+                alloc_darwin, risk_macro = 1.0, 1.0 # Sécurité si fichier introuvable
+
+            # Le Master Brain dicte sa loi sur l'allocation finale
+            alloc_finale = alloc * alloc_darwin * risk_macro
+            
+            mise_nette = (nav_actuelle * alloc_finale * risk_adj) * (1 - FRAIS - SLIPPAGE)
+            # 🧠 --------------------------------- 🧠
             if portfolio['capital_cash'] >= (mise_nette/(1-FRAIS-SLIPPAGE)) and mise_nette > 5:
                 portfolio['capital_cash'] -= (mise_nette / (1 - FRAIS - SLIPPAGE))
                 
