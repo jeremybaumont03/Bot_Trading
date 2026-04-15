@@ -2,7 +2,7 @@ name: V14 Prop Desk Engine
 
 on:
   schedule:
-    # 21h30 UTC = 23h30 Paris (Tourne 15 min APRÈS tes 7 bots classiques)
+    # 21h30 UTC = 23h30 Paris
     - cron: '30 21 * * 1-5'
   workflow_dispatch:
 
@@ -10,7 +10,6 @@ jobs:
   run-v14:
     runs-on: ubuntu-latest
     
-    # 🚨 Droit d'écriture pour sauvegarder le portfolio V14
     permissions:
       contents: write
 
@@ -29,24 +28,25 @@ jobs:
       - name: Installation des dépendances
         run: |
           pip install --upgrade pip
-          pip install yfinance pandas numpy scikit-learn requests
+          pip install yfinance pandas numpy scikit-learn requests joblib
 
-      - name: 🚀 Lancement de la V14 (Observability Layer)
+      - name: 🚀 Lancement de la V14 (Model Registry & Observability)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python entraineur_retail.py
+        run: python entraineur_v14.py
 
-      - name: 💾 Sauvegarde du Portfolio V14
+      - name: 💾 Sauvegarde Portfolio et Modèles .joblib
         run: |
           git config --global user.name "Trading Bot V14"
           git config --global user.email "v14@trading.local"
           
-          # On ajoute uniquement le fichier de la V14
+          # On ajoute le portfolio et le dossier contenant les modèles
           git add portfolio_v14.json || true
+          git add modeles_ia_v14/ || true
           
           if ! git diff --staged --quiet; then
-            git commit -m "📊 MAJ Portfolio V14 - $(date '+%d/%m/%Y %H:%M')"
+            git commit -m "📊 MAJ Portfolio et Modèles V14 - $(date '+%d/%m/%Y %H:%M')"
             git pull --rebase origin main
             git push
           else
