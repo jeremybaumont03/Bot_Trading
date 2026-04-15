@@ -5,7 +5,7 @@ Améliorations :
   - Ultra Conservateur : Seuil IA fixe à 65%
   - Confiance pure en l'IA : Suppression des filtres MA200/Momentum
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
-  - Contrôle Central : Multiplicateurs lus depuis global_settings.json
+  - Contrôle Central : Connecté au Master Brain v2.0 (Macro + Darwin)
   - Shadow Logging : Enregistre les probabilités IA même en cash
   - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
   - Maximum 3 positions simultanées
@@ -57,7 +57,7 @@ FICHIER        = os.path.join(BASE_DIR, "portfolio_conservative.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
 
-# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
+# ── LECTURE DU CERVEAU CENTRAL (MAJ DARWIN) ───────────────────────────────────
 def charger_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
@@ -67,18 +67,19 @@ def charger_settings():
             print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille")
             return None
 
-        atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
-        atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
-        risk   = settings.get("risk_multiplier", 1.0)
-        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
-        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
+        # 🧠 Lecture du Risque Macro
+        risk = settings.get("global_risk_multiplier", 1.0)
+        
+        # 🧬 Lecture de la sélection naturelle (Darwin)
+        nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+        alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
 
-    except FileNotFoundError:
-        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"🧠 Master Brain lu : Risk={risk}x | Budget Darwin={alloc_darwin*100:.1f}%")
+        return {"risk": risk, "alloc_darwin": alloc_darwin}
+
     except Exception as e:
-        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"⚠️ Erreur lecture Cerveau Central : {e} — Mode survie activé")
+        return {"risk": 1.0, "alloc_darwin": 1.0}
 
 # ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
@@ -107,9 +108,6 @@ def faire_backup():
         if not os.path.exists(dest):
             shutil.copy2(FICHIER, dest)
             print(f"💾 Backup sauvegardé avec succès : {nom_backup}")
-        else:
-            print(f"ℹ️ Backup déjà à jour pour aujourd'hui ({date_str}).")
-
     except Exception as e:
         print(f"⚠️ Erreur lors du backup : {e}")
         
@@ -157,7 +155,6 @@ def calculer_signal(ticker):
         df['Mom_20j']    = df['Close'] / df['Close'].shift(20)
         df['Drawdown']   = df['Close'] / df['Close'].cummax() - 1
         
-        # ✅ TYPO FIX: Changed TARGET_HAUSSE to ML_TARGET_HAUSSE
         df['Target']     = (df['Close'].shift(-10) / df['Close'] - 1 > ML_TARGET_HAUSSE).astype(int)
         df['ATR']        = calculer_atr(df, ATR_PERIOD)
         df = df.dropna()
@@ -184,7 +181,6 @@ def calculer_signal(ticker):
         return signal, round(proba, 4), round(alloc, 4), round(prix, 4), round(atr, 4)
 
     except Exception as e:
-        print(f"  ⚠️  Erreur {ticker} : {e}")
         return False, 0.0, 0.0, 0.0, 0.0
 
 # ── VALEUR DU PORTFOLIO ───────────────────────────────────────────────────────
@@ -214,7 +210,7 @@ def calculer_metriques(portfolio):
         sharpe = 0.0
 
     cumul      = (1 + rendements).cumprod()
-    max_dd     = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+    max_dd     = ((cumul - cumul.cummax()) / cumul.cummax()).min() if not cumul.empty else 0.0
 
     return round(sharpe, 3), round(max_dd, 4)
 
@@ -223,16 +219,16 @@ def executer_trades(portfolio, settings):
     aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
-    atr_tp_mult = settings["atr_tp"]
-    atr_sl_mult = settings["atr_sl"]
-    risk_mult   = settings["risk"]
+    risk_mult    = settings["risk"]
+    alloc_darwin = settings["alloc_darwin"]
+    atr_tp_mult  = DEFAULT_ATR_TP_MULT
+    atr_sl_mult  = DEFAULT_ATR_SL_MULT
 
     if 'logs_journaliers' not in portfolio:
         portfolio['logs_journaliers'] = []
 
     print(f"\n📅 Analyse du {aujourd_hui} — RF Conservateur (V2 ATR Hybride)")
     print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
-    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
     print("─" * 90)
     print(f"{'ACTIF':<10} {'IA%':<7} {'ATR':<8} {'SIGNAL':<12} {'ACTION':<20} {'DÉTAIL'}")
     print("─" * 90)
@@ -314,18 +310,18 @@ def executer_trades(portfolio, settings):
         if signal and not position_ouverte:
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
-                detail     = f"({MAX_POSITIONS} positions max)"
             elif atr == 0.0:
                 action_str = "⚠️ ATR INDISPONIBLE"
             else:
-                mise_brute  = portfolio['capital_cash'] * allocation * risk_mult
+                # 🧬 LA MAGIE DARWIN OPERE ICI !
+                mise_brute  = portfolio['capital_cash'] * allocation * risk_mult * alloc_darwin
                 frais_achat = mise_brute * (FRAIS + SLIPPAGE)
                 mise_nette  = mise_brute - frais_achat
 
                 if portfolio['capital_cash'] >= mise_brute and mise_nette > 5:
                     quantite = mise_nette / prix
-                    tp_cible = round(prix + (atr * atr_tp_mult), 4)
-                    sl_cible = round(prix - (atr * atr_sl_mult), 4)
+                    tp_cible = round(prix + (atr * DEFAULT_ATR_TP_MULT), 4)
+                    sl_cible = round(prix - (atr * DEFAULT_ATR_SL_MULT), 4)
 
                     portfolio['capital_cash'] -= mise_brute
                     portfolio['positions'][ticker] = {
@@ -336,8 +332,8 @@ def executer_trades(portfolio, settings):
                         "tp_cible"      : tp_cible,
                         "sl_cible"      : sl_cible,
                         "atr_lors_achat": atr,
-                        "atr_tp_mult"   : atr_tp_mult,
-                        "atr_sl_mult"   : atr_sl_mult
+                        "atr_tp_mult"   : DEFAULT_ATR_TP_MULT,
+                        "atr_sl_mult"   : DEFAULT_ATR_SL_MULT
                     }
                     trade = {
                         "date"    : aujourd_hui,
@@ -356,7 +352,7 @@ def executer_trades(portfolio, settings):
                     action_str = "🟢 ACHETÉ"
                     detail     = f"{mise_brute:.0f}€ @ {prix:.2f} | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
                 else:
-                    action_str = "⚠️ CASH INSUFFISANT"
+                    action_str = "⚠️ BUDGET INSUFFISANT"
 
         # ── EN POSITION ────────────────────────────────────────────────────
         elif position_ouverte and ticker in portfolio['positions']:
