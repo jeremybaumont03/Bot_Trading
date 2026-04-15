@@ -1,9 +1,9 @@
 """
-BOT DE PAPER TRADING — entraineur_v14_observability.py (PROP DESK V14.1)
-Observability Layer : 
-  ✅ Journal Analytique : Enregistrement des empreintes génétiques de chaque trade (Regime, Proba, EV, ATR).
-  ✅ Métriques Quantitatives : Calcul en direct du Profit Factor, Sharpe Ratio, et R/R réalisé.
-  ✅ Logique ML & Risk strictement identique à la V14 Safe Run.
+BOT DE PAPER TRADING — entraineur_v14.py (PROP DESK V14.2 - OBSERVABILITY & CACHE)
+✅ Moteur ML Rapide (RandomForest n_jobs=-1).
+✅ Exponential Weighting & Empirical EV.
+✅ Observability Layer (Empreinte à l'achat, Autopsie à la vente, Dashboard).
+✅ FIX : Model Registry (Sauvegarde des modèles .joblib pour éviter le Timeout GitHub).
 """
 
 import yfinance as yf
@@ -14,6 +14,8 @@ import os
 import sys
 import shutil
 import requests
+import joblib
+import time
 from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
@@ -38,7 +40,7 @@ SLIPPAGE         = 0.0005
 MAX_POSITIONS    = 3
 ATR_PERIOD       = 14
 
-# ── PARAMÈTRES V14 LITE ───────────────────────────────────────────────────────
+# ── PARAMÈTRES V14.2 ──────────────────────────────────────────────────────────
 BASE_SEUIL_ENSEMBLE = 0.55    
 MIN_TRADES_30D      = 5       
 MAX_DD_LIMIT        = -0.15
@@ -51,11 +53,13 @@ CORR_MAX            = 0.75
 VOL_TARGET          = 0.15
 BASE_ATR_TP_MULT    = 2.0
 BASE_ATR_SL_MULT    = 1.5
+MODEL_EXPIRY_DAYS   = 7 # Les modèles expirent après 7 jours
 
 # ── CONFIGURATION DES CHEMINS ─────────────────────────────────────────────────
 BASE_DIR        = os.path.dirname(os.path.abspath(__file__))
-FICHIER         = os.path.join(BASE_DIR, "portfolio_v14_safe.json")
+FICHIER         = os.path.join(BASE_DIR, "portfolio_v14.json")
 DOSSIER_BACKUP  = os.path.join(BASE_DIR, "backups")
+DOSSIER_MODELES = os.path.join(BASE_DIR, "modeles_ia_v14")
 
 # ── TRANSFORMER WINSORIZATION CUSTOM ──────────────────────────────────────────
 class Winsorizer(BaseEstimator, TransformerMixin):
@@ -72,7 +76,7 @@ class Winsorizer(BaseEstimator, TransformerMixin):
     def transform(self, X):
         return np.clip(X, self.lower_bounds_, self.upper_bounds_)
 
-# ── GESTION DE LA DONNÉE (SANS CACHE LOCAL INUTILE) ───────────────────────────
+# ── GESTION DE LA DONNÉE ──────────────────────────────────────────────────────
 DF_CACHE = {}
 
 def charger_donnees():
@@ -113,7 +117,7 @@ def detecter_regime_macro():
     elif prix_actuel > ma200 and vol_20j < 0.15: return "BULL"
     else: return "CHOP"
 
-# ── RISK ENGINE (Log Returns CVaR) ────────────────────────────────────────────
+# ── RISK ENGINE ───────────────────────────────────────────────────────────────
 def calculer_kelly(proba_gain, ratio_gain_perte):
     p, b = max(0.01, min(0.99, proba_gain)), max(0.1, ratio_gain_perte)
     return max(0.0, (p - (1 - p) / b) * KELLY_FRACTION)
@@ -162,7 +166,7 @@ def verifier_correlation(ticker_candidat, positions_ouvertes):
             return False, f"Corrélé à {t_pos}"
     return True, "OK"
 
-# ── PIPELINE ML V14 LITE (Rapide & Robuste) ───────────────────────────────────
+# ── PIPELINE ML V14.2 (Avec Model Registry Joblib) ────────────────────────────
 def creer_features_v14(df, is_spy=False):
     df = df.copy()
     df['MA50'] = df['Close'].rolling(50).mean()
@@ -207,30 +211,44 @@ def analyser_opportunite(ticker, seuil_dynamique, est_en_position):
     features = ['MA50', 'MA200', 'Volatility', 'Mom_10j', 'Mom_60j', 'Drawdown', 'RSI', 'ATR_ratio', 'MACD', 'Vol_regime', 'Rel_SPY', 'SPY_Trend', 'SPY_VIX_Proxy']
     df = df.dropna(subset=['Rel_SPY'])
     
-    df_train = df.iloc[:-20].dropna(subset=features + ['Target_Raw', 'Target_10j']) 
-    if len(df_train) < 100 or len(np.unique(df_train['Target_Raw'])) < 2: return None
+    os.makedirs(DOSSIER_MODELES, exist_ok=True)
+    fichier_modele = os.path.join(DOSSIER_MODELES, f"v14_{ticker}.joblib")
     
-    X_train, y_train = df_train[features].values, df_train['Target_Raw'].values
+    cache_ml = None
     
-    # Exponential Weighting
-    weights = np.exp(np.linspace(-2, 0, len(y_train)))
-    
-    rf = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=10, random_state=42, n_jobs=-1)
-    
-    pipeline = Pipeline([
-        ('winsorizer', Winsorizer()), 
-        ('scaler', RobustScaler()), 
-        ('classifier', rf)
-    ])
-    
-    pipeline.fit(X_train, y_train, classifier__sample_weight=weights) 
-    
-    # Empirical EV
-    win_returns = df_train['Target_10j'][df_train['Target_Raw'] == 1]
-    loss_returns = df_train['Target_10j'][df_train['Target_Raw'] == 0]
-    
-    e_win = np.clip(win_returns.mean(), 0.005, 0.05) if len(win_returns) > 5 else 0.015
-    e_loss = np.clip(abs(loss_returns.mean()), 0.005, 0.05) if len(loss_returns) > 5 else 0.015
+    # 🚨 V14.2 FIX : Model Registry Loading
+    if os.path.exists(fichier_modele):
+        age_jours = (time.time() - os.path.getmtime(fichier_modele)) / 86400
+        if age_jours < MODEL_EXPIRY_DAYS:
+            try:
+                cache_ml = joblib.load(fichier_modele)
+            except: pass
+
+    if not cache_ml:
+        # Entraînement complet (Exécuté 1 fois par semaine par ticker)
+        df_train = df.iloc[:-20].dropna(subset=features + ['Target_Raw', 'Target_10j']) 
+        if len(df_train) < 100 or len(np.unique(df_train['Target_Raw'])) < 2: return None
+        
+        X_train, y_train = df_train[features].values, df_train['Target_Raw'].values
+        weights = np.exp(np.linspace(-2, 0, len(y_train)))
+        
+        rf = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=10, random_state=42, n_jobs=-1)
+        pipeline = Pipeline([('winsorizer', Winsorizer()), ('scaler', RobustScaler()), ('classifier', rf)])
+        pipeline.fit(X_train, y_train, classifier__sample_weight=weights) 
+        
+        win_returns = df_train['Target_10j'][df_train['Target_Raw'] == 1]
+        loss_returns = df_train['Target_10j'][df_train['Target_Raw'] == 0]
+        
+        e_win = np.clip(win_returns.mean(), 0.005, 0.05) if len(win_returns) > 5 else 0.015
+        e_loss = np.clip(abs(loss_returns.mean()), 0.005, 0.05) if len(loss_returns) > 5 else 0.015
+
+        # Sauvegarde dans le registre
+        cache_ml = {"pipeline": pipeline, "e_win": float(e_win), "e_loss": float(e_loss)}
+        joblib.dump(cache_ml, fichier_modele)
+
+    pipeline = cache_ml["pipeline"]
+    e_win = cache_ml["e_win"]
+    e_loss = cache_ml["e_loss"]
 
     derniers_jours = df.iloc[-3:][features].copy().dropna()
     if len(derniers_jours) < 2: return None
@@ -288,7 +306,7 @@ def executer_trades():
         seuil_dynamique -= 0.02  
         atr_tp *= 1.2            
 
-    trades_30d = [t for t in portfolio.get('historique', []) if (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(t.get('date_sortie', t['date']), "%Y-%m-%d")).days <= 30]
+    trades_30d = [t for t in portfolio.get('historique', []) if (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(t.get('date_sortie', t['date_entree']), "%Y-%m-%d")).days <= 30]
     if len(trades_30d) < MIN_TRADES_30D: seuil_dynamique = max(0.50, seuil_dynamique - 0.02)
 
     cb_actif = False
@@ -301,12 +319,11 @@ def executer_trades():
 
     risk_adj = max(0.5, 1.0 - (current_dd / MAX_DD_LIMIT)) if current_dd < 0 else 1.0
 
-    print(f"\n📅 {aujourd_hui} — V14.1 OBSERVABILITY LAYER")
+    print(f"\n📅 {aujourd_hui} — V14.2 PROP DESK CACHED")
     print(f"   Régime: {regime} | NAV: {nav_actuelle:.2f}€ | DD: {current_dd:.1%} | Seuil: {seuil_dynamique:.2f}")
     if cb_actif: print("   🚨 CIRCUIT BREAKER ACTIF — ACHATS BLOQUÉS")
     print("─" * 90)
 
-    # 1. GESTION DES SORTIES (Autopsie)
     for ticker in list(portfolio['positions'].keys()):
         pos = portfolio['positions'][ticker]
         prix = get_prix(ticker)
@@ -328,19 +345,11 @@ def executer_trades():
             pnl = val_nette - pos['mise']
             jours_detention = (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
             
-            # 🚨 OBSERVABILITY : Enregistrement de l'autopsie
             trade_log = {
-                "date_entree": pos['date_achat'],
-                "date_sortie": aujourd_hui,
-                "ticker": ticker,
-                "action": "VENTE",
-                "raison": raison,
-                "pnl": round(pnl, 2),
-                "pnl_pct": round(rendement, 4),
-                "jours_detention": jours_detention,
-                "regime_entree": pos.get('regime_macro', 'UNKNOWN'),
-                "proba_entree": pos.get('proba', 0),
-                "ev_entree": pos.get('ev', 0)
+                "date_entree": pos['date_achat'], "date_sortie": aujourd_hui, "ticker": ticker,
+                "action": "VENTE", "raison": raison, "pnl": round(pnl, 2), "pnl_pct": round(rendement, 4),
+                "jours_detention": jours_detention, "regime_entree": pos.get('regime_macro', 'UNKNOWN'),
+                "proba_entree": pos.get('proba', 0), "ev_entree": pos.get('ev', 0)
             }
             portfolio['historique'].append(trade_log)
             del portfolio['positions'][ticker]
@@ -348,7 +357,6 @@ def executer_trades():
         else:
             print(f"{ticker:<8} {'—':<6} 🔵 EN POSITION       PnL:{rendement*100:+.1f}%")
 
-    # 2. GESTION DES ENTRÉES (Empreinte Génétique)
     if not cb_actif and len(portfolio['positions']) < MAX_POSITIONS:
         candidats = []
         for ticker in [t for t in TICKERS if t not in portfolio['positions']]:
@@ -361,7 +369,6 @@ def executer_trades():
             if len(portfolio['positions']) >= MAX_POSITIONS: break
             
             ticker, alloc, prix, atr = cand['ticker'], cand['alloc'], cand['prix'], cand['atr']
-            
             if not verifier_correlation(ticker, list(portfolio['positions'].keys())): continue
             if calculer_cvar_portefeuille(portfolio['positions'], ticker, alloc, nav_actuelle) < MAX_CVAR_95: continue
                 
@@ -369,19 +376,11 @@ def executer_trades():
             if portfolio['capital_cash'] >= (mise_nette/(1-FRAIS-SLIPPAGE)) and mise_nette > 5:
                 portfolio['capital_cash'] -= (mise_nette / (1 - FRAIS - SLIPPAGE))
                 
-                # 🚨 OBSERVABILITY : Enregistrement de l'empreinte à l'achat
                 portfolio['positions'][ticker] = {
-                    "quantite": mise_nette / prix, 
-                    "prix_achat": prix, 
-                    "date_achat": aujourd_hui,
-                    "mise": mise_nette / (1 - FRAIS - SLIPPAGE), 
-                    "tp_cible": prix + (atr * atr_tp), 
-                    "sl_cible": prix - (atr * atr_sl), 
-                    "proba": cand['proba'], 
-                    "ev": cand['ev'],
-                    "atr_local": atr,
-                    "regime_macro": regime,
-                    "poids_portefeuille": alloc
+                    "quantite": mise_nette / prix, "prix_achat": prix, "date_achat": aujourd_hui,
+                    "mise": mise_nette / (1 - FRAIS - SLIPPAGE), "tp_cible": prix + (atr * atr_tp), 
+                    "sl_cible": prix - (atr * atr_sl), "proba": cand['proba'], "ev": cand['ev'],
+                    "atr_local": atr, "regime_macro": regime, "poids_portefeuille": alloc
                 }
                 print(f"{ticker:<8} {cand['proba']:<6.0%} 🟢 ACHETÉ (EV:{cand['ev']:.4f})  TP:{prix+(atr*atr_tp):.2f}")
 
@@ -389,7 +388,7 @@ def executer_trades():
     with open(FICHIER, "w") as f: json.dump(portfolio, f, indent=2)
     return portfolio
 
-# ── RÉSUMÉ & ANALYTIQUE (Le Dashboard du Quant) ───────────────────────────────
+# ── RÉSUMÉ & ANALYTIQUE ───────────────────────────────────────────────────────
 def afficher_resume_analytique(portfolio):
     aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
     valeur_totale = calculer_nav(portfolio)
@@ -398,7 +397,6 @@ def afficher_resume_analytique(portfolio):
     trades_fermes = [t for t in portfolio['historique'] if t.get('action') == 'VENTE']
     nb_trades     = len(trades_fermes)
     
-    # 🚨 ANALYTIQUES AVANCÉES
     wins = [t for t in trades_fermes if t.get('pnl', 0) > 0]
     losses = [t for t in trades_fermes if t.get('pnl', 0) <= 0]
     
@@ -416,22 +414,17 @@ def afficher_resume_analytique(portfolio):
     max_dd = (( (1+rendements).cumprod() - (1+rendements).cumprod().cummax() ) / (1+rendements).cumprod().cummax()).min() if not rendements.empty else 0.0
 
     print("\n" + "═" * 75)
-    print(f"📊 DASHBOARD ANALYTIQUE V14.1 — {aujourd_hui}")
+    print(f"📊 DASHBOARD ANALYTIQUE V14.2 — {aujourd_hui}")
     print("═" * 75)
     print(f"  NAV actuelle         : {valeur_totale:.2f} € ({perf_totale:+.2f}%)")
-    print(f"  Cash disponible      : {portfolio['capital_cash']:.2f} €")
     print(f"  Positions ouvertes   : {len(portfolio['positions'])} / {MAX_POSITIONS}")
-    print("-" * 75)
     print(f"  Trades fermés        : {nb_trades} (Win rate: {win_rate:.0f}%)")
     print(f"  Profit Factor        : {profit_factor:.2f}")
-    print(f"  Avg Win / Avg Loss   : {avg_win:+.2f}% / {avg_loss:+.2f}%")
     print(f"  Sharpe Ratio         : {sharpe:.2f} | Max Drawdown : {max_dd:.1%}")
     print("═" * 75)
     
-    msg_tg = f"📊 *DASHBOARD V14.1*\n💰 NAV: {valeur_totale:.2f}€\n📈 WinRate: {win_rate:.0f}%\n⚖️ ProfitFactor: {profit_factor:.2f}\n📉 MaxDD: {max_dd:.1%}"
+    msg_tg = f"📊 *V14.2 CACHED*\n💰 NAV: {valeur_totale:.2f}€\n📈 WinRate: {win_rate:.0f}%\n📉 MaxDD: {max_dd:.1%}"
     gerer_telegram(msg_tg)
-    
-    return portfolio
 
 if __name__ == "__main__":
     faire_backup()
