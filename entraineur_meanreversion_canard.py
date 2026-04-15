@@ -4,7 +4,7 @@ But : générer de l'activité et vérifier que toute l'infrastructure fonctionn
 Règles volontairement plus souples que le bot MR Elite.
   - RSI < 45 au lieu de 30 — trade presque tous les jours.
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
-  - Contrôle Central : Multiplicateurs lus depuis global_settings.json
+  - Contrôle Central : Connecté au Master Brain v2.0 (Macro + Darwin)
   - FIX PRIX 0.0 : Sécurité contre les bugs Yahoo Finance
 """
 
@@ -54,7 +54,7 @@ FICHIER        = os.path.join(BASE_DIR, "portfolio_mr_canary.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
 
-# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
+# ── LECTURE DU CERVEAU CENTRAL (MAJ DARWIN) ───────────────────────────────────
 def charger_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
@@ -64,20 +64,23 @@ def charger_settings():
             print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille")
             return None
 
+        # 🧠 Lecture du Risque Macro
+        risk = settings.get("global_risk_multiplier", 1.0)
+        
+        # 🧬 Lecture de la sélection naturelle (Darwin)
+        nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+        alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
+
         # Le Canary utilise des multiplicateurs plus agressifs s'ils ne sont pas spécifiés
         atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
         atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
-        risk   = settings.get("risk_multiplier", 1.0)
         
-        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
-        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
+        print(f"🧠 Master Brain lu : Risk={risk}x | Budget Darwin={alloc_darwin*100:.1f}% | TP={atr_tp}x | SL={atr_sl}x")
+        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk, "alloc_darwin": alloc_darwin}
 
-    except FileNotFoundError:
-        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
     except Exception as e:
-        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"⚠️ Erreur lecture Cerveau Central : {e} — Mode survie activé")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0, "alloc_darwin": 1.0}
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
@@ -208,16 +211,17 @@ def executer_trades(portfolio, settings):
     aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
-    atr_tp_mult = settings["atr_tp"]
-    atr_sl_mult = settings["atr_sl"]
-    risk_mult   = settings["risk"]
+    atr_tp_mult  = settings["atr_tp"]
+    atr_sl_mult  = settings["atr_sl"]
+    risk_mult    = settings["risk"]
+    alloc_darwin = settings["alloc_darwin"]
 
     if 'logs_journaliers' not in portfolio:
         portfolio['logs_journaliers'] = []
 
     print(f"\n📅 Analyse du {aujourd_hui} — Canary Bot (RSI < {RSI_SEUIL_ACHAT})")
     print(f"   Positions : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers : {len(TICKERS)}")
-    print(f"   Multiplicateurs : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
+    print(f"   Multiplicateurs : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x | Darwin={alloc_darwin*100:.1f}%")
     print("─" * 90)
     print(f"{'ACTIF':<10} {'RSI':<8} {'ATR':<8} {'SIGNAL':<10} {'ACTION':<20} {'DÉTAIL'}")
     print("─" * 90)
@@ -297,7 +301,8 @@ def executer_trades(portfolio, settings):
             elif atr == 0.0:
                 action_str = "⚠️ ATR INDISPONIBLE"
             else:
-                mise = (portfolio['capital_cash'] * MISE_PAR_TRADE) * risk_mult
+                # 🧬 LA MAGIE DARWIN OPERE ICI !
+                mise = (portfolio['capital_cash'] * MISE_PAR_TRADE) * risk_mult * alloc_darwin
                 frais_achat = mise * (FRAIS + SLIPPAGE)
                 mise_nette  = mise - frais_achat
 
@@ -323,6 +328,8 @@ def executer_trades(portfolio, settings):
                     trades_du_jour.append(trade)
                     action_str = "🟢 ACHETÉ"
                     detail     = f"{mise:.0f}€ @ {prix:.2f} | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
+                else:
+                    action_str = "⚠️ CASH INSUFFISANT"
 
         elif position_ouverte and ticker in portfolio['positions']:
             pos         = portfolio['positions'][ticker]
