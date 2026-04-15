@@ -1,8 +1,8 @@
-streamlit
 yfinance
 pandas
 numpy
-plotly
 scikit-learn
-requests
 joblib
+requests
+hmmlearn
+statsmodels
