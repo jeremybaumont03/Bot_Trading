@@ -2,7 +2,7 @@
 BOT DE PAPER TRADING — V2 MEAN REVERSION (V4 ATR HYBRIDE)
 Améliorations vs V3 Élite :
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité réelle de chaque actif
-  - Contrôle Central : Multiplicateurs ATR lus depuis global_settings.json
+  - Contrôle Central : Connecté au Master Brain v2.0 (Macro + Darwin)
   - Time Stop (10j) conservé
   - Tous les filtres V3 conservés (RSI, MA20, filtre SPY)
   - Correction sys.exit() appliquée
@@ -47,33 +47,32 @@ FICHIER        = os.path.join(BASE_DIR, "portfolio_mr.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
 
-# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
+# ── LECTURE DU CERVEAU CENTRAL (MAJ DARWIN) ───────────────────────────────────
 def charger_settings():
-    """
-    Lit global_settings.json pour récupérer les multiplicateurs ATR.
-    Si le fichier est absent, utilise les valeurs par défaut (le bot ne plante pas).
-    """
     try:
         with open(SETTINGS_FILE, "r") as f:
             settings = json.load(f)
 
-        # Vérification du master switch
         if not settings.get("master_switch_active", True):
-            print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille (aucun achat)")
-            return None  # Signal d'arrêt
+            print("🛑 MASTER SWITCH DÉSACTIVÉ — Bot en mode veille")
+            return None
+
+        # 🧠 Lecture du Risque Macro
+        risk = settings.get("global_risk_multiplier", 1.0)
+        
+        # 🧬 Lecture de la sélection naturelle (Darwin)
+        nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+        alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
 
         atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
         atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
-        risk   = settings.get("risk_multiplier", 1.0)
-        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
-        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
 
-    except FileNotFoundError:
-        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"🧠 Master Brain lu : Risk={risk}x | Budget Darwin={alloc_darwin*100:.1f}% | TP={atr_tp}x | SL={atr_sl}x")
+        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk, "alloc_darwin": alloc_darwin}
+
     except Exception as e:
-        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"⚠️ Erreur lecture Cerveau Central : {e} — Mode survie activé")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0, "alloc_darwin": 1.0}
 
 # ── TELEGRAM ──────────────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
@@ -136,12 +135,7 @@ def calculer_rsi(series, period=14):
 
 # ── ATR ───────────────────────────────────────────────────────────────────────
 def calculer_atr(df, period=14):
-    """
-    Average True Range — mesure la respiration réelle de l'actif.
-    Un ATR élevé = actif très volatil (Tesla, BTC).
-    Un ATR faible = actif calme (GLD, TLT).
-    Le TP et SL seront automatiquement ajustés en conséquence.
-    """
+    """Average True Range — mesure la respiration réelle de l'actif."""
     high_low    = df['High'] - df['Low']
     high_close  = (df['High'] - df['Close'].shift()).abs()
     low_close   = (df['Low']  - df['Close'].shift()).abs()
@@ -174,7 +168,7 @@ def calculer_signal_mr(ticker):
 
         df['RSI']  = calculer_rsi(df['Close'], RSI_PERIOD)
         df['MA20'] = df['Close'].rolling(20).mean()
-        df['ATR']  = calculer_atr(df, ATR_PERIOD)  # ✅ NOUVEAU
+        df['ATR']  = calculer_atr(df, ATR_PERIOD) 
         df = df.dropna()
 
         last = df.iloc[-1]
@@ -182,7 +176,7 @@ def calculer_signal_mr(ticker):
         rsi  = float(last['RSI'])
         prix = float(last['Close'])
         ma20 = float(last['MA20'])
-        atr  = float(last['ATR'])   # ✅ NOUVEAU
+        atr  = float(last['ATR'])   
 
         prix_remonte    = float(last['Close']) > float(prev['Close'])
         distance_ma     = prix / ma20
@@ -216,7 +210,7 @@ def calculer_metriques(portfolio):
     rendements = pd.Series(valeurs).pct_change().dropna()
     sharpe = rendements.mean() / rendements.std() * np.sqrt(252) if rendements.std() > 0 else 0.0
     cumul  = (1 + rendements).cumprod()
-    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min() if not cumul.empty else 0.0
     return round(sharpe, 3), round(max_dd, 4)
 
 # ── TRADES ────────────────────────────────────────────────────────────────────
@@ -225,13 +219,14 @@ def executer_trades(portfolio, settings):
     trades_du_jour = []
 
     # Extraction des multiplicateurs depuis le Cerveau Central
-    atr_tp_mult = settings["atr_tp"]
-    atr_sl_mult = settings["atr_sl"]
-    risk_mult   = settings["risk"]
+    atr_tp_mult  = settings["atr_tp"]
+    atr_sl_mult  = settings["atr_sl"]
+    risk_mult    = settings["risk"]
+    alloc_darwin = settings["alloc_darwin"]
 
     print(f"\n📅 Analyse du {aujourd_hui} — Mean Reversion ATR Hybride (V4)")
     print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS}")
-    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
+    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x | Darwin={alloc_darwin*100:.1f}%")
     print("─" * 90)
     print(f"{'ACTIF':<10} {'RSI':<8} {'ATR':<10} {'SIGNAL':<12} {'ACTION':<22} {'DÉTAIL'}")
     print("─" * 90)
@@ -241,7 +236,6 @@ def executer_trades(portfolio, settings):
         
         # ✅ THE 0.0 PRICE BUG FIX (Sécurité anti-crash)
         if prix <= 0.0:
-            print(f"⚠️ Yahoo Finance API Bug for {ticker} (Price is 0.0). Skipping.")
             continue
             
         position_ouverte = ticker in portfolio['positions']
@@ -300,7 +294,7 @@ def executer_trades(portfolio, settings):
                 detail           = f"PnL: {pnl_net:+.0f}€ ({rendement*100:+.1f}%)"
                 position_ouverte = False
 
-        # ── ACHAT (RSI < 30 + filtres V3) ─────────────────────────────────────
+        # ── ACHAT (RSI < 30 + filtres V3 + DARWIN) ────────────────────────────
         if signal and not position_ouverte:
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
@@ -308,7 +302,8 @@ def executer_trades(portfolio, settings):
             elif atr == 0.0:
                 action_str = "⚠️ ATR INDISPONIBLE"
             else:
-                mise_brute  = portfolio['capital_cash'] * MISE_PAR_TRADE * risk_mult
+                # 🧬 LA MAGIE DARWIN OPERE ICI !
+                mise_brute  = portfolio['capital_cash'] * MISE_PAR_TRADE * risk_mult * alloc_darwin
                 frais_achat = mise_brute * (FRAIS + SLIPPAGE)
                 mise_nette  = mise_brute - frais_achat
 
