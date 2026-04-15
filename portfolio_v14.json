@@ -1,0 +1,52 @@
+{
+  "capital_depart": 1000.0,
+  "capital_cash": 836.4418743835964,
+  "positions": {
+    "HD": {
+      "quantite": 0.1578926280166803,
+      "prix_achat": 342.7099914550781,
+      "date_achat": "2026-04-15",
+      "mise": 54.19267020372192,
+      "tp_cible": 360.788565499442,
+      "sl_cible": 329.15106092180525,
+      "proba": 0.6776043244406208,
+      "ev": 0.006762879662313488,
+      "atr_local": 9.03928702218192,
+      "regime_macro": "CHOP",
+      "poids_portefeuille": 0.05419267020372192
+    },
+    "V": {
+      "quantite": 0.286576769209825,
+      "prix_achat": 311.3699951171875,
+      "date_achat": "2026-04-15",
+      "mise": 89.3654554126816,
+      "tp_cible": 324.64998953683033,
+      "sl_cible": 301.40999930245533,
+      "proba": 0.6682019327603742,
+      "ev": 0.006118810775307461,
+      "atr_local": 6.639997209821429,
+      "regime_macro": "CHOP",
+      "poids_portefeuille": 0.0893654554126816
+    },
+    "TSLA": {
+      "quantite": 0.054832507772262125,
+      "prix_achat": 364.20001220703125,
+      "date_achat": "2026-04-15",
+      "mise": 20.0,
+      "tp_cible": 394.2671552385603,
+      "sl_cible": 341.6496549333845,
+      "proba": 0.5439082477520382,
+      "ev": 0.004390824775203819,
+      "atr_local": 15.033571515764509,
+      "regime_macro": "CHOP",
+      "poids_portefeuille": 0.02
+    }
+  },
+  "historique": [],
+  "valeur_historique": [
+    {
+      "date": "2026-04-15",
+      "valeur": 999.75
+    }
+  ]
+}
