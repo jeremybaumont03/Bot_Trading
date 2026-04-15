@@ -1,7 +1,26 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 1030.1872085970251,
-  "positions": {},
+  "capital_cash": 640.0,
+  "positions": {
+    "QCOM": {
+      "quantite": 1.588324,
+      "prix_achat": 125.73,
+      "date_achat": "2026-04-06",
+      "mise": 200.0,
+      "tp_cible": 0.04
+    },
+    "TSLA": {
+      "quantite": 0.457831,
+      "prix_achat": 348.95,
+      "date_achat": "2026-04-10",
+      "mise": 160.0,
+      "tp_cible": 379.81,
+      "sl_cible": 325.805,
+      "atr_lors_achat": 15.43,
+      "atr_tp_mult": 2.0,
+      "atr_sl_mult": 1.5
+    }
+  },
   "historique": [
     {
       "date": "2026-04-06",
@@ -23,34 +42,6 @@
       "tp_cible": 379.81,
       "sl_cible": 325.805,
       "atr": 15.43
-    },
-    {
-      "date": "2026-04-15",
-      "ticker": "TSLA",
-      "action": "VENTE",
-      "raison": "TAKE PROFIT",
-      "prix": 391.95,
-      "quantite": 0.457831,
-      "valeur": 179.18,
-      "pnl": 19.18,
-      "pnl_pct": 12.32,
-      "frais": 0.27,
-      "duree_jours": 5,
-      "atr_lors_achat": 15.43
-    },
-    {
-      "date": "2026-04-15",
-      "ticker": "QCOM",
-      "action": "VENTE",
-      "raison": "TAKE PROFIT",
-      "prix": 133.05,
-      "quantite": 1.588324,
-      "valeur": 211.01,
-      "pnl": 11.01,
-      "pnl_pct": 5.82,
-      "frais": 0.32,
-      "duree_jours": 9,
-      "atr_lors_achat": 0
     }
   ],
   "valeur_historique": [
@@ -93,10 +84,6 @@
     {
       "date": "2026-04-14",
       "valeur": 1000.0
-    },
-    {
-      "date": "2026-04-15",
-      "valeur": 1030.19
     }
   ],
   "logs_journaliers": [

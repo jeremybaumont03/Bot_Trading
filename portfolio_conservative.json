@@ -87,6 +87,10 @@
     {
       "date": "2026-04-14",
       "valeur": 800.0
+    },
+    {
+      "date": "2026-04-15",
+      "valeur": 800.0
     }
   ],
   "logs_journaliers": [
@@ -1708,6 +1712,186 @@
       "date": "2026-04-14",
       "ticker": "XLF",
       "proba_ia": 0.1448,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "AAPL",
+      "proba_ia": 0.1624,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "MSFT",
+      "proba_ia": 0.2083,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "NVDA",
+      "proba_ia": 0.1797,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "GOOGL",
+      "proba_ia": 0.2025,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "AMZN",
+      "proba_ia": 0.1764,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "META",
+      "proba_ia": 0.173,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "TSLA",
+      "proba_ia": 0.1189,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "NFLX",
+      "proba_ia": 0.281,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "AMD",
+      "proba_ia": 0.2845,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "INTC",
+      "proba_ia": 0.2767,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "TSM",
+      "proba_ia": 0.2403,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "QCOM",
+      "proba_ia": 0.2947,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "JPM",
+      "proba_ia": 0.2854,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "V",
+      "proba_ia": 0.174,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "BAC",
+      "proba_ia": 0.2878,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "GS",
+      "proba_ia": 0.3401,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "WMT",
+      "proba_ia": 0.2889,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "JNJ",
+      "proba_ia": 0.2193,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "PG",
+      "proba_ia": 0.2166,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "HD",
+      "proba_ia": 0.2466,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "DIS",
+      "proba_ia": 0.2282,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "BTC-USD",
+      "proba_ia": 0.3741,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "ETH-USD",
+      "proba_ia": 0.465,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "SPY",
+      "proba_ia": 0.0527,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "QQQ",
+      "proba_ia": 0.0645,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "IWM",
+      "proba_ia": 0.1333,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "TLT",
+      "proba_ia": 0.0693,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "GLD",
+      "proba_ia": 0.3456,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "XLK",
+      "proba_ia": 0.1228,
+      "signal_valide": false
+    },
+    {
+      "date": "2026-04-15",
+      "ticker": "XLF",
+      "proba_ia": 0.142,
       "signal_valide": false
     }
   ]
