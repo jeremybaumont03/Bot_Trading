@@ -6,7 +6,7 @@ Améliorations :
   - Seuil réaliste (55%)
   - Modèle : LogisticRegression (Régularisé C=0.1)
   - ATR Dynamique : TP et SL calculés en fonction de la volatilité
-  - Contrôle Central : Multiplicateurs lus depuis global_settings.json
+  - Contrôle Central : Connecté au Master Brain v2.0 (Macro + Darwin)
   - Sortie Dynamique : L'IA peut couper ses pertes sans restriction
   - FIX ANTI-OVERFITTING (Live Quant) & FIX PRIX 0.0
 """
@@ -56,7 +56,7 @@ FICHIER        = os.path.join(BASE_DIR, "portfolio_lr.json")
 DOSSIER_BACKUP = os.path.join(BASE_DIR, "backups")
 SETTINGS_FILE  = os.path.join(BASE_DIR, "global_settings.json")
 
-# ── LECTURE DU CERVEAU CENTRAL ────────────────────────────────────────────────
+# ── LECTURE DU CERVEAU CENTRAL (MAJ DARWIN) ───────────────────────────────────
 def charger_settings():
     try:
         with open(SETTINGS_FILE, "r") as f:
@@ -68,16 +68,20 @@ def charger_settings():
 
         atr_tp = settings.get("atr_tp_multiplier", DEFAULT_ATR_TP_MULT)
         atr_sl = settings.get("atr_sl_multiplier", DEFAULT_ATR_SL_MULT)
-        risk   = settings.get("risk_multiplier", 1.0)
-        print(f"🧠 Cerveau Central chargé : ATR_TP={atr_tp}x | ATR_SL={atr_sl}x | Risk={risk}x")
-        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk}
+        
+        # 🧠 Lecture du Risque Macro
+        risk = settings.get("global_risk_multiplier", 1.0)
+        
+        # 🧬 Lecture de la sélection naturelle (Darwin)
+        nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+        alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
 
-    except FileNotFoundError:
-        print(f"⚠️ global_settings.json introuvable — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"🧠 Master Brain lu : Risk={risk}x | Budget Darwin={alloc_darwin*100:.1f}% | TP={atr_tp}x | SL={atr_sl}x")
+        return {"atr_tp": atr_tp, "atr_sl": atr_sl, "risk": risk, "alloc_darwin": alloc_darwin}
+
     except Exception as e:
-        print(f"⚠️ Erreur lecture settings : {e} — valeurs par défaut utilisées")
-        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0}
+        print(f"⚠️ Erreur lecture Cerveau Central : {e} — Mode survie activé")
+        return {"atr_tp": DEFAULT_ATR_TP_MULT, "atr_sl": DEFAULT_ATR_SL_MULT, "risk": 1.0, "alloc_darwin": 1.0}
 
 # ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
@@ -210,7 +214,7 @@ def calculer_metriques(portfolio):
         sharpe = 0.0
 
     cumul  = (1 + rendements).cumprod()
-    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min()
+    max_dd = ((cumul - cumul.cummax()) / cumul.cummax()).min() if not cumul.empty else 0.0
 
     return round(sharpe, 3), round(max_dd, 4)
 
@@ -219,16 +223,17 @@ def executer_trades(portfolio, settings):
     aujourd_hui    = datetime.now().strftime("%Y-%m-%d")
     trades_du_jour = []
 
-    atr_tp_mult = settings["atr_tp"]
-    atr_sl_mult = settings["atr_sl"]
-    risk_mult   = settings["risk"]
+    atr_tp_mult  = settings["atr_tp"]
+    atr_sl_mult  = settings["atr_sl"]
+    risk_mult    = settings["risk"]
+    alloc_darwin = settings["alloc_darwin"]
 
     if 'logs_journaliers' not in portfolio:
         portfolio['logs_journaliers'] = []
 
     print(f"\n📅 Analyse du {aujourd_hui} — Logistic Regression (V2 ATR Hybride)")
     print(f"   Positions ouvertes : {len(portfolio['positions'])} / {MAX_POSITIONS} | Tickers scannés : {len(TICKERS)}")
-    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x")
+    print(f"   Multiplicateurs    : TP={atr_tp_mult}x ATR | SL={atr_sl_mult}x ATR | Risk={risk_mult}x | Darwin={alloc_darwin*100:.1f}%")
     print("─" * 90)
     print(f"{'ACTIF':<10} {'IA%':<7} {'ATR':<8} {'SIGNAL':<12} {'ACTION':<20} {'DÉTAIL'}")
     print("─" * 90)
@@ -310,11 +315,11 @@ def executer_trades(portfolio, settings):
         if signal and not position_ouverte:
             if len(portfolio['positions']) >= MAX_POSITIONS:
                 action_str = "🚫 MAX ATTEINT"
-                detail     = f"({MAX_POSITIONS} positions max)"
             elif atr == 0.0:
                 action_str = "⚠️ ATR INDISPONIBLE"
             else:
-                mise_brute  = portfolio['capital_cash'] * allocation * risk_mult
+                # 🧬 LA MAGIE DARWIN OPERE ICI !
+                mise_brute  = portfolio['capital_cash'] * allocation * risk_mult * alloc_darwin
                 frais_achat = mise_brute * (FRAIS + SLIPPAGE)
                 mise_nette  = mise_brute - frais_achat
 
@@ -352,7 +357,7 @@ def executer_trades(portfolio, settings):
                     action_str = "🟢 ACHETÉ"
                     detail     = f"{mise_brute:.0f}€ @ {prix:.2f} | TP:{tp_cible:.2f} | SL:{sl_cible:.2f}"
                 else:
-                    action_str = "⚠️ CASH INSUFFISANT"
+                    action_str = "⚠️ BUDGET INSUFFISANT"
 
         # ── EN POSITION ────────────────────────────────────────────────────
         elif position_ouverte and ticker in portfolio['positions']:
