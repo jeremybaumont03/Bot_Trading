@@ -1,32 +1,9 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 800.0,
+  "capital_cash": 1000.0,
   "positions": {},
   "historique": [
-    {
-      "date": "2026-04-02",
-      "ticker": "GS",
-      "action": "ACHAT",
-      "prix": 863.04,
-      "quantite": 0.231391,
-      "mise": 200.0,
-      "frais": 0.3
-    },
-    {
-      "date": "2026-04-07",
-      "ticker": "GS",
-      "action": "VENTE",
-      "raison": "SIGNAL IA",
-      "prix": 0.0,
-      "quantite": 0.231391,
-      "valeur": 0.0,
-      "pnl": -200.0,
-      "pnl_pct": -100.0,
-      "frais": 0.0,
-      "duree_jours": 5,
-      "atr_lors_achat": 0
-    }
-  ],
+  ]
   "valeur_historique": [
     {
       "date": "2026-03-25",
@@ -82,15 +59,15 @@
     },
     {
       "date": "2026-04-13",
-      "valeur": 800.0
+      "valeur": 1000.0
     },
     {
       "date": "2026-04-14",
-      "valeur": 800.0
+      "valeur": 1000.0
     },
     {
       "date": "2026-04-15",
-      "valeur": 800.0
+      "valeur": 1000.0
     }
   ],
   "logs_journaliers": [
