@@ -132,8 +132,19 @@ def main():
         "master_switch_active": True,
         "market_regime": regime,
         "global_risk_multiplier": config["risk"],
+        # Étape 3 : Assemblage du Cerveau
+    global_settings = {
+        "last_update": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "master_switch_active": True,
+        "market_regime": regime,
+        "global_risk_multiplier": config["risk"],
+        "atr_tp_multiplier": 2.0, 
+        "atr_sl_multiplier": 1.5, 
         "description": config["desc"],
-        "bot_allocations": allocations  # ⭐ LA PIÈCE MAÎTRESSE
+        "bot_allocations": allocations  
+    }
+        "description": config["desc"],
+        "bot_allocations": allocations  
     }
     
     sauvegarder_settings(global_settings)
