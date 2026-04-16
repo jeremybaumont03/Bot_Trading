@@ -5,7 +5,9 @@ on:
     # 21h00 UTC = 23h00 Paris (Heure d'été) -> Tourne AVANT les bots !
     - cron: '00 21 * * 1-5'
   workflow_dispatch:
-
+concurrency:
+  group: usine-trading
+  cancel-in-progress: false
 jobs:
   run-labo:
     runs-on: ubuntu-latest
