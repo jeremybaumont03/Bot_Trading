@@ -1,6 +1,17 @@
 {
-    "master_switch_active": true,
-    "risk_multiplier": 1.0,
-    "description": "Cerveau Central - Contr\u00f4le l'exposition de tous les bots",
-    "last_update": "2026-04-07 00:42:52"
+  "master_switch_active": true,
+  "global_risk_multiplier": 1.0,
+  "atr_tp_multiplier": 2.0,
+  "atr_sl_multiplier": 1.5,
+  "bot_allocations": {
+    "portfolio": 0.50,
+    "portfolio_mr": 0.30,
+    "portfolio_lr": 0.10,
+    "portfolio_gb": 0.10,
+    "portfolio_conservative": 0.00,
+    "portfolio_aggressive": 0.00,
+    "portfolio_mr_canary": 0.00
+  },
+  "description": "Cerveau Central V2 - Contrôle l'exposition, le risque ATR et les allocations Darwin",
+  "last_update": "2026-04-16 09:30:00"
 }
