@@ -5,7 +5,9 @@ on:
     # 21h30 UTC = 23h30 Paris
     - cron: '30 21 * * 1-5'
   workflow_dispatch:
-
+concurrency:
+  group: usine-trading
+  cancel-in-progress: false
 jobs:
   run-v14:
     runs-on: ubuntu-latest
