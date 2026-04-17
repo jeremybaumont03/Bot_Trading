@@ -54,20 +54,16 @@ jobs:
           python entraineur_meanreversion.py || true
           python entraineur_meanreversion_canard.py || true
           
-      # 💾 3. Sauvegarde propre
       - name: Sauvegarder et Synchroniser
         run: |
           git config --global user.name "Trading Bot"
           git config --global user.email "bot@trading.local"
-          
-          # On ajoute tout : portfolios, logs, settings et backups
+          git stash || true
+          git pull --rebase origin main || true
+          git stash pop || true
           git add *.json backups/ || true
-          
-          # On vérifie s'il y a des changements avant de commit
           if ! git diff --staged --quiet; then
             git commit -m "📊 MAJ Multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
-            # Sécurité : on "pull" les changements éventuels avant de "push"
-            git pull --rebase origin main
             git push
           else
             echo "Aucun changement à sauvegarder aujourd'hui."
