@@ -52,7 +52,7 @@ jobs:
           python entraineur_conservative.py || true
           python entraineur_aggressive.py || true
           python entraineur_meanreversion.py || true
-          python entraineur_mr_canary.py || true
+          python entraineur_meanreversion_canary.py || true
           
       # 💾 3. Sauvegarde propre
       - name: Sauvegarder et Synchroniser
