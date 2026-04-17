@@ -42,17 +42,17 @@ jobs:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python pairs_bot.py || echo "Pairs Bot a échoué mais on continue"
-      - name: Sauvegarder et Synchroniser
+      - name: 💾 Sauvegarde des journaux de recherche
         run: |
-          git config --global user.name "Trading Bot"
-          git config --global user.email "bot@trading.local"
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action Bot"
           git stash || true
           git pull --rebase origin main || true
           git stash pop || true
-          git add *.json backups/ || true
+          git add pairs_log.json regime_log.json kmeans_log.json || true
           if ! git diff --staged --quiet; then
-            git commit -m "📊 MAJ Multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
+            git commit -m "🔬 Mise à jour des logs du Laboratoire - $(date '+%d/%m/%Y %H:%M')"
             git push
           else
-            echo "Aucun changement à sauvegarder aujourd'hui."
+            echo "Aucun nouveau log à enregistrer."
           fi
