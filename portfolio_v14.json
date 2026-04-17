@@ -1,6 +1,6 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 836.4418743835964,
+  "capital_cash": 767.920916059797,
   "positions": {
     "HD": {
       "quantite": 0.1578926280166803,
@@ -28,21 +28,35 @@
       "regime_macro": "CHOP",
       "poids_portefeuille": 0.0893654554126816
     },
-    "TSLA": {
-      "quantite": 0.054832507772262125,
-      "prix_achat": 364.20001220703125,
-      "date_achat": "2026-04-15",
-      "mise": 20.0,
-      "tp_cible": 394.2671552385603,
-      "sl_cible": 341.6496549333845,
-      "proba": 0.5439082477520382,
-      "ev": 0.004390824775203819,
-      "atr_local": 15.033571515764509,
+    "NFLX": {
+      "quantite": 0.928160791050023,
+      "prix_achat": 97.30999755859375,
+      "date_achat": "2026-04-17",
+      "mise": 90.45500682129212,
+      "tp_cible": 104.33856637137276,
+      "sl_cible": 92.03857094900948,
+      "proba": 0.7813572047369733,
+      "ev": 0.023331465569542145,
+      "atr_local": 3.514284406389509,
       "regime_macro": "CHOP",
-      "poids_portefeuille": 0.02
+      "poids_portefeuille": 0.09005631662237329
     }
   },
-  "historique": [],
+  "historique": [
+    {
+      "date_entree": "2026-04-15",
+      "date_sortie": "2026-04-17",
+      "ticker": "TSLA",
+      "action": "VENTE",
+      "raison": "TAKE PROFIT",
+      "pnl": 1.93,
+      "pnl_pct": 0.1,
+      "jours_detention": 2,
+      "regime_entree": "CHOP",
+      "proba_entree": 0.5439082477520382,
+      "ev_entree": 0.004390824775203819
+    }
+  ],
   "valeur_historique": [
     {
       "date": "2026-04-15",
@@ -51,6 +65,10 @@
     {
       "date": "2026-04-15",
       "valeur": 1001.98
+    },
+    {
+      "date": "2026-04-17",
+      "valeur": 1004.26
     }
   ]
 }
