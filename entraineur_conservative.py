@@ -84,15 +84,22 @@ def charger_settings():
 # ── FONCTION TELEGRAM ─────────────────────────────────────────────────────────
 def envoyer_alerte_telegram(message):
     if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
-        print("ℹ️ Telegram ignoré en mode local (pas de tokens configurés).")
+        print("ℹ️ Telegram ignoré : Tokens manquants.")
         return
         
     url = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
+    # ✅ Utilisation de HTML (plus robuste que Markdown)
+    payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "HTML"}
+    
     try:
-        requests.post(url, data=payload, timeout=10)
+        response = requests.post(url, data=payload, timeout=10)
+        # ✅ Affiche l'erreur si Telegram rejette le message
+        if response.status_code != 200:
+            print(f"❌ Erreur Telegram {response.status_code}: {response.text}")
+        else:
+            print("📱 Alerte Telegram envoyée avec succès.")
     except Exception as e:
-        print(f"⚠️ Erreur Telegram : {e}")
+        print(f"⚠️ Erreur de connexion Telegram : {e}")
         
 # ── LA FONCTION DE SAUVEGARDE ─────────────────────────────────────────────────
 def faire_backup():
@@ -450,6 +457,6 @@ if __name__ == "__main__":
                 lignes.append(f"{emoji} VENTE {t['ticker']} — PnL : {t.get('pnl', 0):+.0f}€ ({t.get('raison', '')})")
         
         msg = "\n".join(lignes)
-        envoyer_alerte_telegram(f"🛡️ *RF Conservateur ATR — Mouvements*\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"🛡️ <b>RF Conservateur ATR — Mouvements</b>\n\n{msg}\n\n💰 Portfolio : {val_fin:.2f}€")
     else:
-        envoyer_alerte_telegram(f"😴 *RF Conservateur ATR — Scan terminé*\nAucun mouvement aujourd'hui\n💰 Portfolio : {val_fin:.2f}€")
+        envoyer_alerte_telegram(f"😴 <b>RF Conservateur ATR — Scan terminé</b>\nAucun mouvement aujourd'hui\n💰 Portfolio : {val_fin:.2f}€")
