@@ -34,11 +34,11 @@ jobs:
           if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
       # 🧠 1. Le Boss parle en premier (AVEC l'antenne Telegram)
-      - name: 🧠 Lancement du Meta-Controller (Génère global_settings.json)
+      - name: 🧠 Lancement du Meta-Controlleur (Génère global_settings.json)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python meta_controller.py || true
+        run: python meta_controlleur.py || true
 
       # 🤖 2. L'armée de bots s'exécute
       - name: Lancement des 7 Bots
