@@ -1,11 +1,10 @@
 """
-🧠 META CONTROLLEUR v2.2 — FULL INTELLIGENCE (VERSION CORRIGÉE)
-Corrections appliquées :
-  ✅ Fix Darwin : Amortissement 50% pour éviter la monopolisation du capital
-  ✅ Fix HMM/KMeans : Lecture robuste qui accepte tous les formats de clés
-  ✅ Fix Telegram : Alerte si changement de régime
-  ✅ Fix Fallback : Allocations égales si aucun portfolio trouvé
-  ✅ Écriture atomique conservée
+🧠 META CONTROLLEUR v4.4 — INSTITUTIONAL GRADE (PRODUCTION READY)
+Améliorations v4.4 (Data Integrity) :
+  ✅ Déduplication temporelle : Le filtre 3 jours ne compte qu'une entrée par date.
+  ✅ Sémantique stricte : "NORMAL" est évalué comme NEUTRAL (fini le biais haussier).
+  ✅ Filtrage Darwin Paranoïaque : Le Sortino ne calcule que sur des ventes réelles avec PnL.
+  ✅ Double Radar Macro (SPY + QQQ) et Panic Mode Hybride conservés.
 """
 
 import json
@@ -18,12 +17,8 @@ import pandas as pd
 import numpy as np
 from datetime import datetime
 
-# ── LOGGING & CONFIG ──────────────────────────────────────────────────────────
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - 🧠 MASTER BRAIN - %(levelname)s - %(message)s'
-)
-
+# ── LOGGING & CHEMINS ─────────────────────────────────────────────────────────
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - 🧠 MASTER BRAIN - %(levelname)s - %(message)s')
 BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE_DIR, "global_settings.json")
 KMEANS_FILE   = os.path.join(BASE_DIR, "kmeans_log.json")
@@ -32,291 +27,219 @@ HMM_FILE      = os.path.join(BASE_DIR, "regime_log.json")
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# ── TELEGRAM ──────────────────────────────────────────────────────────────────
+CONFIRMATION_JOURS = 3
+ALLOCATION_CAP     = 0.40  # Max 40% du capital par bot
+MIN_TRADES_SHARPE  = 10
+VOLATILITE_PANIQUE = 0.30
+
+PARAMS_REGIME = {
+    "BULL":    {"target_risk": 1.0, "atr_tp": 2.5, "atr_sl": 1.5, "desc": "🟢 Plein régime"},
+    "NEUTRAL": {"target_risk": 0.6, "atr_tp": 2.0, "atr_sl": 1.5, "desc": "🟡 Prudence — Marché mitigé"},
+    "BEAR":    {"target_risk": 0.2, "atr_tp": 1.5, "atr_sl": 2.0, "desc": "🔴 Défensif — Alerte Krach"}
+}
+
 def envoyer_telegram(message):
-    if not TOKEN_TELEGRAM or not CHAT_ID_TELEGRAM:
-        return
-    try:
-        url     = f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage"
-        payload = {"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}
-        requests.post(url, data=payload, timeout=10)
-    except Exception as e:
-        logging.warning(f"Telegram : {e}")
+    if TOKEN_TELEGRAM and CHAT_ID_TELEGRAM:
+        try: requests.post(f"https://api.telegram.org/bot{TOKEN_TELEGRAM}/sendMessage", data={"chat_id": CHAT_ID_TELEGRAM, "text": message, "parse_mode": "Markdown"}, timeout=10)
+        except: pass
 
-# ── 1. MODULE LABO (Lecture robuste HMM + KMeans) ────────────────────────────
+# ── MODULE 1 : LECTURE LABO ───────────────────────────────────────────────────
 def normaliser_regime(regime_raw):
-    """
-    ✅ FIX : Accepte tous les formats possibles de tes scripts HMM/KMeans.
-    Que ce soit "BULL", "HAUSSIER", "NORMAL", "BULL/NORMAL MARKET (Sûr)",
-    "BEAR", "BAISSIER", "CRISE", index 0 ou 1 — tout est normalisé.
-    """
-    if regime_raw is None:
-        return "NEUTRAL"
-
+    if regime_raw is None: return "NEUTRAL"
     r = str(regime_raw).upper()
-
-    if any(x in r for x in ["BULL", "HAUSSIER", "NORMAL", "SAFE", "1"]):
+    
+    # ✅ FIX: "NORMAL" n'est plus haussier, il tombe dans le fallback NEUTRAL
+    if any(x in r for x in ["BULL", "HAUSSIER", "ACHAT", "UP"]): 
         return "BULL"
-    elif any(x in r for x in ["BEAR", "BAISSIER", "CRISE", "DANGER", "VOLATILE", "0"]):
+    elif any(x in r for x in ["BEAR", "BAISSIER", "CRISE", "DANGER", "VOLATILE", "DOWN"]): 
         return "BEAR"
+        
     return "NEUTRAL"
 
 def lire_donnees_labo():
-    """
-    ✅ FIX : Lit les fichiers JSON du Labo en acceptant liste ou objet unique.
-    Essaie toutes les clés possibles pour trouver le régime.
-    """
     lab_intel = {"kmeans": "NEUTRAL", "hmm": "NEUTRAL", "hmm_confiance": 0.5}
-
-    # ── Lecture K-Means ───────────────────────────────────────────────────────
-    if os.path.exists(KMEANS_FILE):
-        try:
-            with open(KMEANS_FILE, "r") as f:
-                data = json.load(f)
-
-            # Supporte liste ou objet
-            entree = data[-1] if isinstance(data, list) else data
-
-            # Essaie toutes les clés possibles
-            regime_raw = (
-                entree.get("regime")
-                or entree.get("regime_kmeans")
-                or entree.get("cluster")
-                or entree.get("state")
-                or "NEUTRAL"
-            )
-            lab_intel["kmeans"] = normaliser_regime(regime_raw)
-            logging.info(f"🔬 K-Means lu : {regime_raw} → {lab_intel['kmeans']}")
-        except Exception as e:
-            logging.warning(f"Lecture KMeans : {e}")
-
-    # ── Lecture HMM ───────────────────────────────────────────────────────────
-    if os.path.exists(HMM_FILE):
-        try:
-            with open(HMM_FILE, "r") as f:
-                data = json.load(f)
-
-            entree = data[-1] if isinstance(data, list) else data
-
-            # ✅ FIX : Essaie TOUTES les clés possibles du HMM
-            regime_raw = (
-                entree.get("regime")
-                or entree.get("regime_markov")
-                or entree.get("regime_hmm")
-                or entree.get("state")
-                or entree.get("hidden_state")
-                or "NEUTRAL"
-            )
-            confiance = float(
-                entree.get("confiance")
-                or entree.get("confidence")
-                or entree.get("proba")
-                or 0.5
-            )
-            lab_intel["hmm"]          = normaliser_regime(regime_raw)
-            lab_intel["hmm_confiance"] = confiance
-            logging.info(f"🔬 HMM lu : {regime_raw} → {lab_intel['hmm']} (confiance: {confiance:.0%})")
-        except Exception as e:
-            logging.warning(f"Lecture HMM : {e}")
-
+    for file, key in [(KMEANS_FILE, "kmeans"), (HMM_FILE, "hmm")]:
+        if os.path.exists(file):
+            try:
+                with open(file, "r") as f: data = json.load(f)
+                entree = data[-1] if isinstance(data, list) else data
+                lab_intel[key] = normaliser_regime(entree.get("regime", "NEUTRAL"))
+                if key == "hmm": lab_intel["hmm_confiance"] = float(entree.get("confidence", entree.get("confiance", 0.5)))
+            except: pass
     return lab_intel
 
-# ── 2. MODULE MACRO ───────────────────────────────────────────────────────────
-def obtenir_regime_macro():
-    """
-    Analyse croisée : SPY Technique + K-Means + HMM.
-    Le HMM a plus de poids que le K-Means car c'est un modèle plus sophistiqué.
-    """
+# ── MODULE 2 : DÉTECTION MACRO ────────────────────────────────────────────────
+def detecter_regime_brut():
     try:
-        spy = yf.download("SPY", period="2y", progress=False, interval="1d")
-        if isinstance(spy.columns, pd.MultiIndex):
-            spy.columns = spy.columns.get_level_values(0)
-        spy_close = spy["Close"].dropna()
+        # Double Radar Macro (SPY + QQQ)
+        tickers = yf.download(["SPY", "QQQ"], period="2y", progress=False)["Close"].dropna()
+        if isinstance(tickers.columns, pd.MultiIndex): tickers.columns = tickers.columns.get_level_values(0)
+        
+        spy_close = tickers["SPY"]
+        qqq_close = tickers["QQQ"]
 
-        prix      = float(spy_close.iloc[-1])
-        ma200     = float(spy_close.rolling(200).mean().iloc[-1])
-        vol_ann   = float(spy_close.pct_change().rolling(20).std().iloc[-1] * np.sqrt(252))
+        prix    = float(spy_close.iloc[-1])
+        ma200   = float(spy_close.rolling(200).mean().iloc[-1])
+        mom_20j = float(spy_close.iloc[-1] / spy_close.iloc[-20] - 1) if len(spy_close) >= 20 else 0.0
+        
+        vol_spy = float(spy_close.pct_change().rolling(20).std().iloc[-1] * np.sqrt(252))
+        vol_qqq = float(qqq_close.pct_change().rolling(20).std().iloc[-1] * np.sqrt(252))
+        vol_max = max(vol_spy, vol_qqq)
 
         labo = lire_donnees_labo()
-        hmm_regime    = labo["hmm"]
-        kmeans_regime = labo["kmeans"]
-        hmm_conf      = labo["hmm_confiance"]
+        hmm_regime, hmm_conf, kmeans_regime = labo["hmm"], labo["hmm_confiance"], labo["kmeans"]
+        poids_hmm = hmm_conf * 2.0
 
-        logging.info(f"📊 SPY: {prix:.2f} | MA200: {ma200:.2f} | Vol: {vol_ann:.1%}")
-        logging.info(f"📊 HMM: {hmm_regime} ({hmm_conf:.0%}) | KMeans: {kmeans_regime}")
+        signaux_bear = 0.0
+        if prix < ma200:            signaux_bear += 1.0
+        if vol_max > 0.25:          signaux_bear += 1.0
+        if mom_20j < -0.05:         signaux_bear += 1.0
+        if kmeans_regime == "BEAR": signaux_bear += 1.0
+        if hmm_regime == "BEAR":    signaux_bear += poids_hmm
 
-        # ── Règles de décision ────────────────────────────────────────────────
-        # BEAR : Conditions graves — au moins 2 signaux négatifs
-        signaux_bear = 0
-        if prix < ma200:           signaux_bear += 1
-        if vol_ann > 0.25:         signaux_bear += 1
-        if hmm_regime == "BEAR" and hmm_conf > 0.60:  signaux_bear += 2  # HMM poids double
-        if kmeans_regime == "BEAR": signaux_bear += 1
+        signaux_bull = 0.0
+        if prix > ma200:            signaux_bull += 1.0
+        if vol_max < 0.15:          signaux_bull += 1.0
+        if mom_20j > 0.02:          signaux_bull += 1.0
+        if kmeans_regime == "BULL": signaux_bull += 1.0
+        if hmm_regime == "BULL":    signaux_bull += poids_hmm
 
-        # BULL : Conditions favorables
-        signaux_bull = 0
-        if prix > ma200:           signaux_bull += 1
-        if vol_ann < 0.15:         signaux_bull += 1
-        if hmm_regime == "BULL" and hmm_conf > 0.60:  signaux_bull += 2
-        if kmeans_regime == "BULL": signaux_bull += 1
-
-        if signaux_bear >= 2:
-            return "BEAR"
-        elif signaux_bull >= 3:
-            return "BULL"
-        else:
-            return "NEUTRAL"
-
+        if signaux_bear >= 2.5:   return "BEAR", vol_max
+        elif signaux_bull >= 3.0: return "BULL", vol_max
+        else:                     return "NEUTRAL", vol_max
     except Exception as e:
-        logging.error(f"Erreur Analyse Macro : {e}")
-        return "NEUTRAL"
+        logging.error(f"Erreur détection macro : {e}")
+        return "NEUTRAL", 0.15
 
-# ── 3. MODULE DARWIN (Corrigé) ────────────────────────────────────────────────
+# ── MODULE 3 : FILTRE DE CONFIRMATION (Dédupliqué) ────────────────────────────
+def appliquer_filtre_confirmation(regime_brut, settings_actuels):
+    historique = settings_actuels.get("historique_regime_brut", [])
+    aujourd_hui = datetime.now().strftime("%Y-%m-%d")
+
+    # ✅ FIX: Déduplication temporelle (Écrase si on relance le même jour)
+    if historique and historique[-1].get("date") == aujourd_hui:
+        historique[-1]["regime"] = regime_brut
+    else:
+        historique.append({"date": aujourd_hui, "regime": regime_brut})
+
+    historique = historique[-CONFIRMATION_JOURS:]
+    regimes_recents = [h["regime"] for h in historique]
+
+    if len(historique) >= CONFIRMATION_JOURS and len(set(regimes_recents)) == 1:
+        return regimes_recents[0], historique
+    return settings_actuels.get("market_regime", "NEUTRAL"), historique
+
+# ── MODULE 4 : DARWIN V4.4 (Sortino & Data Integrity) ─────────────────────────
 def calculer_darwin_allocations():
-    """
-    ✅ FIX : Amortissement 50% pour éviter qu'un seul bot monopolise tout le capital.
-    Formule : score = max(0.5, 10 + pnl_recent * 0.5)
-    
-    Exemple :
-    - Bot qui a gagné 50€ → score = 10 + 25 = 35  (pas 60 comme avant)
-    - Bot qui a perdu 15€ → score = max(0.5, 10 - 7.5) = 2.5
-    - Bot neutre (0€)    → score = 10
-    """
     fichiers = glob.glob(os.path.join(BASE_DIR, "portfolio_*.json"))
-
-    if not fichiers:
-        logging.warning("Aucun portfolio trouvé — allocations égales par défaut")
-        return {}
+    if not fichiers: return {}
 
     scores = {}
     total_score = 0
 
     for f in fichiers:
         nom_bot = os.path.basename(f).replace(".json", "")
-
-        # Ignore les fichiers de backup
-        if "backup" in nom_bot.lower():
-            continue
+        if any(x in nom_bot.lower() for x in ["backup", "tmp", "v14_safe", "v12"]): continue
 
         try:
-            with open(f, "r") as pf:
-                data = json.load(pf)
+            with open(f, "r") as pf: data = json.load(pf)
+            
+            # ✅ FIX: Filtrage Darwin paranoïaque (Seulement de vrais trades clôturés)
+            trades_fermes = [
+                t for t in data.get("historique", []) 
+                if t.get("action") == "VENTE" 
+                and "pnl" in t 
+                and t.get("mise", 0) > 0
+            ]
+            trades_recents = trades_fermes[-20:]
 
-            historique = data.get("historique", [])
-
-            # PnL des 20 derniers trades fermés
-            trades_fermes = [t for t in historique if t.get("action") == "VENTE"]
-            trades_recents = trades_fermes[-20:] if len(trades_fermes) >= 20 else trades_fermes
-            pnl_recent = sum(t.get("pnl", 0) for t in trades_recents)
-
-            # ✅ FIX : Amortissement 50% — évite la monopolisation
-            score = max(0.5, 10 + pnl_recent * 0.5)
-
+            if len(trades_recents) < MIN_TRADES_SHARPE:
+                score = 5.0
+            else:
+                # Calcul du Ratio de Sortino robuste sur les rendements
+                rendements = pd.Series([t["pnl"] / t["mise"] for t in trades_recents])
+                downside = rendements[rendements < 0]
+                
+                if len(downside) > 0 and downside.std() > 0:
+                    sortino_robuste = (rendements.mean() / downside.std()) * np.sqrt(len(trades_recents))
+                else:
+                    sortino_robuste = (rendements.mean() / 0.01) * np.sqrt(len(trades_recents)) if rendements.mean() > 0 else 0.0
+                    
+                score = max(0.5, 10 + (sortino_robuste * 5))
+            
             scores[nom_bot] = score
             total_score += score
-
-            logging.info(f"🤖 {nom_bot:<30} PnL 20 trades: {pnl_recent:+.2f}€ → score: {score:.2f}")
-
         except Exception as e:
-            logging.warning(f"Erreur lecture {nom_bot} : {e}")
-            scores[nom_bot] = 1.0
-            total_score += 1.0
+            logging.warning(f"Alerte Darwin sur {nom_bot} : {e}")
+            scores[nom_bot] = 1.0; total_score += 1.0
 
-    if total_score == 0:
-        # ✅ Fallback : allocations égales si tout plante
-        n = len(scores)
-        return {bot: round(1.0 / n, 4) for bot in scores} if n > 0 else {}
+    if total_score == 0: return {}
 
-    # Normalisation (somme = 1.0)
-    allocations = {bot: round(s / total_score, 4) for bot, s in scores.items()}
-
-    # ✅ Vérification que la somme fait bien ~1.0
-    total = sum(allocations.values())
-    logging.info(f"📊 Somme allocations : {total:.4f} (doit être ~1.0)")
-
-    return allocations
-
-# ── 4. PARAMÈTRES PAR RÉGIME ──────────────────────────────────────────────────
-PARAMS_REGIME = {
-    "BULL": {
-        "risk"         : 1.0,
-        "atr_tp_mult"  : 2.5,
-        "atr_sl_mult"  : 1.5,
-        "description"  : "🟢 Plein régime — Confiance IA forte"
-    },
-    "NEUTRAL": {
-        "risk"         : 0.6,
-        "atr_tp_mult"  : 2.0,
-        "atr_sl_mult"  : 1.5,
-        "description"  : "🟡 Prudence — Marché mitigé"
-    },
-    "BEAR": {
-        "risk"         : 0.2,
-        "atr_tp_mult"  : 1.5,
-        "atr_sl_mult"  : 2.0,
-        "description"  : "🔴 Défensif — Alerte Krach/Volatilité"
-    },
-}
+    # Allocation Cap et Renormalisation
+    alloc_cappees = {bot: min(ALLOCATION_CAP, s / total_score) for bot, s in scores.items()}
+    total_cappe = sum(alloc_cappees.values())
+    
+    return {bot: round(v / total_cappe, 4) for bot, v in alloc_cappees.items()} if total_cappe > 0 else alloc_cappees
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    logging.info("=" * 60)
-    logging.info("🧠 MASTER BRAIN v2.2 — Synchronisation en cours...")
-    logging.info("=" * 60)
+    logging.info("🚀 MASTER BRAIN v4.4 — Déploiement Final (Data Integrity)")
+    
+    try:
+        with open(SETTINGS_FILE, "r") as f: settings_actuels = json.load(f)
+    except: settings_actuels = {}
 
-    # 1. Régime macro
-    regime = obtenir_regime_macro()
-    config = PARAMS_REGIME.get(regime, PARAMS_REGIME["NEUTRAL"])
+    regime_brut, vol_max = detecter_regime_brut()
+    regime_confirme, historique = appliquer_filtre_confirmation(regime_brut, settings_actuels)
+    config = PARAMS_REGIME.get(regime_confirme, PARAMS_REGIME["NEUTRAL"])
 
-    # 2. Allocations darwiniennes
+    ancien_risque = float(settings_actuels.get("global_risk_multiplier", 0.6))
+    risque_cible  = config["target_risk"]
+    
+    # Risk Smoothing Asymétrique
+    risque_lisse  = risque_cible if risque_cible < ancien_risque else round((0.7 * ancien_risque) + (0.3 * risque_cible), 3)
+
+    allow_buying = True
+    panic_mode = False
+    
+    # Kill Switch Hybride
+    if regime_brut == "BEAR" and vol_max > VOLATILITE_PANIQUE:
+        allow_buying, risque_lisse, panic_mode = False, 0.0, True
+        logging.warning(f"🚨 PANIC MODE ACTIVÉ : Régime BEAR + Volatilité Extrême ({vol_max:.1%}).")
+    elif regime_confirme == "BEAR":
+        allow_buying, risque_lisse = False, 0.0
+        logging.warning("🛑 ACHATS BLOQUÉS (Tendance BEAR confirmée).")
+
     allocations = calculer_darwin_allocations()
 
-    # 3. Lecture du fichier actuel pour détecter un changement de régime
-    ancien_regime = "UNKNOWN"
-    try:
-        with open(SETTINGS_FILE, "r") as f:
-            ancien = json.load(f)
-            ancien_regime = ancien.get("market_regime", "UNKNOWN")
-    except:
-        pass
-
-    # 4. Construction du fichier final
     global_settings = {
-        "last_update"          : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "last_update_by"       : "meta_controller_v2.2",
-        "master_switch_active" : True,
-        "market_regime"        : regime,
-        "global_risk_multiplier"      : config["risk"],
-        "atr_tp_multiplier"    : config["atr_tp_mult"],
-        "atr_sl_multiplier"    : config["atr_sl_mult"],
-        "bot_allocations"      : allocations,
-        "description"          : config["description"]
+        "last_update"            : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        "last_update_by"         : "meta_controller_v4.4",
+        "allow_buying"           : allow_buying,
+        "panic_mode"             : panic_mode,
+        "market_regime"          : regime_confirme,
+        "regime_brut_today"      : regime_brut,
+        "global_risk_multiplier" : risque_lisse,
+        "target_risk_multiplier" : risque_cible,
+        "atr_tp_multiplier"      : config["atr_tp"],
+        "atr_sl_multiplier"      : config["atr_sl"],
+        "description"            : config["desc"],
+        "bot_allocations"        : allocations,
+        "historique_regime_brut" : historique,
     }
 
-    # 5. Écriture atomique (✅ conservée)
     temp_file = SETTINGS_FILE + ".tmp"
-    with open(temp_file, "w") as f:
-        json.dump(global_settings, f, indent=4)
+    with open(temp_file, "w") as f: json.dump(global_settings, f, indent=4)
     os.replace(temp_file, SETTINGS_FILE)
-
-    logging.info(f"✅ global_settings.json mis à jour")
-    logging.info(f"   Régime : {regime} | Risk : {config['risk']}x")
-    logging.info(f"   Allocations : {allocations}")
-
-    # 6. Alerte Telegram si changement de régime
-    if regime != ancien_regime:
-        emoji = {"BULL": "🟢", "NEUTRAL": "🟡", "BEAR": "🔴"}.get(regime, "⚪")
-        msg = (
-            f"🧠 *Meta Controller v2.2 — Changement de Régime*\n\n"
-            f"{emoji} `{ancien_regime}` → `{regime}`\n\n"
-            f"⚙️ Risk : `{config['risk']}x`\n"
-            f"🎯 ATR TP : `{config['atr_tp_mult']}x` | SL : `{config['atr_sl_mult']}x`\n\n"
-            f"📋 {config['description']}"
-        )
+    logging.info(f"✅ Risk exécuté : {risque_lisse} (Ancien: {ancien_risque})")
+    
+    ancien_regime = settings_actuels.get("market_regime", "UNKNOWN")
+    if (regime_confirme != ancien_regime and ancien_regime != "UNKNOWN") or panic_mode:
+        emoji = "🚨" if panic_mode else {"BULL": "🟢", "NEUTRAL": "🟡", "BEAR": "🔴"}.get(regime_confirme, "⚪")
+        msg = (f"🧠 *Master Brain v4.4*\n\n{emoji} {'**PANIC MODE**' if panic_mode else f'`{ancien_regime}` → `{regime_confirme}`'}\n\n"
+               f"📉 Cible : `{risque_cible}x` | 🌊 Lissé : `{risque_lisse}x`\n"
+               f"🛑 Achats : `{'OUI' if allow_buying else 'NON'}`\n\n📋 {config['desc']}")
         envoyer_telegram(msg)
-        logging.info(f"📱 Alerte Telegram envoyée (régime changé : {ancien_regime} → {regime})")
-    else:
-        logging.info(f"ℹ️ Régime inchangé ({regime}) — pas d'alerte Telegram")
 
 if __name__ == "__main__":
     main()
