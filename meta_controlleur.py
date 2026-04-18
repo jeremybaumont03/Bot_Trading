@@ -286,7 +286,7 @@ def main():
         "last_update_by"       : "meta_controller_v2.2",
         "master_switch_active" : True,
         "market_regime"        : regime,
-        "risk_multiplier"      : config["risk"],
+        "global_risk_multiplier"      : config["risk"],
         "atr_tp_multiplier"    : config["atr_tp_mult"],
         "atr_sl_multiplier"    : config["atr_sl_mult"],
         "bot_allocations"      : allocations,
