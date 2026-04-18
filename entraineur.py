@@ -1,10 +1,9 @@
 """
-BOT DE PAPER TRADING — entraineur_v14_observability.py (PROP DESK V14.1)
-Observability Layer : 
-  ✅ Journal Analytique : Enregistrement des empreintes génétiques de chaque trade (Regime, Proba, EV, ATR).
-  ✅ Métriques Quantitatives : Calcul en direct du Profit Factor, Sharpe Ratio, et R/R réalisé.
-  ✅ Logique ML & Risk strictement identique à la V14 Safe Run.
-  🧠 CONNECTÉ AU MASTER BRAIN (Darwin + Macro)
+BOT DE PAPER TRADING — entraineur_v14_observability.py (PROP DESK V14.2)
+Observability Layer & Portfolio Awareness : 
+  ✅ Connecté au Master Brain v4.4 (Obéit au Panic Mode 'allow_buying' et aux ATR dynamiques).
+  ✅ Enregistre la 'mise' et l'EV pour le calcul du Ratio de Sortino du Master Brain.
+  ✅ VUE GLOBALE v5.0 : Scanne tous les portefeuilles de l'usine pour éviter la sur-corrélation sectorielle.
 """
 
 import yfinance as yf
@@ -15,11 +14,15 @@ import os
 import sys
 import shutil
 import requests
+import glob
 from datetime import datetime
 from sklearn.base import BaseEstimator, TransformerMixin
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import RobustScaler
 from sklearn.pipeline import Pipeline
+import warnings
+
+warnings.filterwarnings("ignore")
 
 # ── CONFIGURATION TELEGRAM ────────────────────────────────────────────────────
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
@@ -74,7 +77,7 @@ class Winsorizer(BaseEstimator, TransformerMixin):
     def transform(self, X):
         return np.clip(X, self.lower_bounds_, self.upper_bounds_)
 
-# ── GESTION DE LA DONNÉE (SANS CACHE LOCAL INUTILE) ───────────────────────────
+# ── GESTION DE LA DONNÉE ──────────────────────────────────────────────────────
 DF_CACHE = {}
 
 def charger_donnees():
@@ -104,16 +107,45 @@ def calculer_nav(portfolio):
         nav += pos['quantite'] * px if px > 0 else pos['mise']
     return nav
 
-# ── UNSUPERVISED REGIME DETECTION ─────────────────────────────────────────────
-def detecter_regime_macro():
-    spy = DF_CACHE['SPY']
-    ma200 = spy['Close'].rolling(200).mean().iloc[-1]
-    prix_actuel = spy['Close'].iloc[-1]
-    vol_20j = spy['Close'].pct_change().rolling(20).std().iloc[-1] * np.sqrt(252)
+# ── VUE GLOBALE & CORRÉLATION (v5.0) ──────────────────────────────────────────
+def obtenir_positions_globales():
+    """Scanne tous les bots de l'usine pour savoir quelles actions sont actuellement détenues au total."""
+    positions_globales = []
+    fichiers = glob.glob(os.path.join(BASE_DIR, "portfolio_*.json"))
     
-    if prix_actuel < ma200 and vol_20j > 0.18: return "BEAR"
-    elif prix_actuel > ma200 and vol_20j < 0.15: return "BULL"
-    else: return "CHOP"
+    for f in fichiers:
+        if any(x in f.lower() for x in ["backup", "tmp"]): continue
+        try:
+            with open(f, "r") as pf:
+                data = json.load(pf)
+                positions_globales.extend(list(data.get("positions", {}).keys()))
+        except: pass
+    return list(set(positions_globales))
+
+def verifier_correlation_globale(ticker_candidat):
+    """Vérifie si la nouvelle action n'est pas déjà trop corrélée avec TOUTE l'usine."""
+    positions_usine = obtenir_positions_globales()
+    if not positions_usine: return True, "OK"
+        
+    df_cand = DF_CACHE.get(ticker_candidat)
+    if df_cand is None or len(df_cand) < 120: return True, "OK"
+    
+    rend_cand = np.log(df_cand['Close'] / df_cand['Close'].shift(1)).tail(120).dropna() 
+    
+    for t_pos in positions_usine:
+        if t_pos == ticker_candidat:
+            return False, f"⚠️ L'usine possède déjà {t_pos}"
+        if DF_CACHE.get(t_pos) is None: continue
+            
+        rend_pos = np.log(DF_CACHE[t_pos]['Close'] / DF_CACHE[t_pos]['Close'].shift(1)).tail(120).dropna()
+        common = rend_cand.index.intersection(rend_pos.index)
+        
+        if len(common) >= 30:
+            correlation = abs(rend_cand[common].corr(rend_pos[common]))
+            if correlation > CORR_MAX:
+                return False, f"🛑 Trop corrélé à {t_pos} global (r={correlation:.2f})"
+                
+    return True, "OK"
 
 # ── RISK ENGINE (Log Returns CVaR) ────────────────────────────────────────────
 def calculer_kelly(proba_gain, ratio_gain_perte):
@@ -149,20 +181,6 @@ def calculer_cvar_portefeuille(portfolio_positions, new_ticker, new_weight_cible
     sorted_returns = np.sort(port_returns)
     index = int(0.05 * len(sorted_returns))
     return np.mean(sorted_returns[:max(1, index)])
-
-def verifier_correlation(ticker_candidat, positions_ouvertes):
-    if not positions_ouvertes: return True, "OK"
-    df_cand = DF_CACHE.get(ticker_candidat)
-    if df_cand is None or len(df_cand) < 120: return True, "OK"
-    
-    rend_cand = np.log(df_cand['Close'] / df_cand['Close'].shift(1)).tail(120).dropna() 
-    for t_pos in positions_ouvertes:
-        if DF_CACHE.get(t_pos) is None: continue
-        rend_pos = np.log(DF_CACHE[t_pos]['Close'] / DF_CACHE[t_pos]['Close'].shift(1)).tail(120).dropna()
-        common = rend_cand.index.intersection(rend_pos.index)
-        if len(common) >= 30 and abs(rend_cand[common].corr(rend_pos[common])) > CORR_MAX:
-            return False, f"Corrélé à {t_pos}"
-    return True, "OK"
 
 # ── PIPELINE ML V14 LITE (Rapide & Robuste) ───────────────────────────────────
 def creer_features_v14(df, is_spy=False):
@@ -213,21 +231,12 @@ def analyser_opportunite(ticker, seuil_dynamique, est_en_position):
     if len(df_train) < 100 or len(np.unique(df_train['Target_Raw'])) < 2: return None
     
     X_train, y_train = df_train[features].values, df_train['Target_Raw'].values
-    
-    # Exponential Weighting
     weights = np.exp(np.linspace(-2, 0, len(y_train)))
     
     rf = RandomForestClassifier(n_estimators=100, max_depth=5, min_samples_leaf=10, random_state=42, n_jobs=-1)
-    
-    pipeline = Pipeline([
-        ('winsorizer', Winsorizer()), 
-        ('scaler', RobustScaler()), 
-        ('classifier', rf)
-    ])
-    
+    pipeline = Pipeline([('winsorizer', Winsorizer()), ('scaler', RobustScaler()), ('classifier', rf)])
     pipeline.fit(X_train, y_train, classifier__sample_weight=weights) 
     
-    # Empirical EV
     win_returns = df_train['Target_10j'][df_train['Target_Raw'] == 1]
     loss_returns = df_train['Target_10j'][df_train['Target_Raw'] == 0]
     
@@ -238,7 +247,6 @@ def analyser_opportunite(ticker, seuil_dynamique, est_en_position):
     if len(derniers_jours) < 2: return None
     
     proba_lisse = np.mean(pipeline.predict_proba(derniers_jours.values)[:, 1])
-    
     seuil_effectif = seuil_dynamique - 0.02 if est_en_position else seuil_dynamique
     if proba_lisse < seuil_effectif: return None
 
@@ -247,7 +255,6 @@ def analyser_opportunite(ticker, seuil_dynamique, est_en_position):
     if atr <= 0 or vol_ann <= 0: return None
 
     expected_value = (proba_lisse * e_win) - ((1 - proba_lisse) * e_loss)
-    
     if expected_value <= 0: return None 
 
     ratio_gp = e_win / e_loss
@@ -275,22 +282,36 @@ def executer_trades():
     aujourd_hui = datetime.now().strftime("%Y-%m-%d")
     nav_actuelle = calculer_nav(portfolio)
 
+    # 🧠 --- LECTURE DU MASTER BRAIN v4.4 --- 🧠
+    try:
+        with open(SETTINGS_FILE, "r") as f:
+            settings = json.load(f)
+            # Lecture du Panic Mode (allow_buying)
+            allow_buying = settings.get("allow_buying", settings.get("master_switch_active", True))
+            regime = settings.get("market_regime", "NEUTRAL") 
+            risk_macro = settings.get("global_risk_multiplier", 1.0)
+            atr_tp = settings.get("atr_tp_multiplier", BASE_ATR_TP_MULT)
+            atr_sl = settings.get("atr_sl_multiplier", BASE_ATR_SL_MULT)
+            
+            nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
+            alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
+    except Exception as e:
+        print(f"⚠️ Erreur Master Brain : {e}. Mode Survie activé.")
+        allow_buying, regime, risk_macro, alloc_darwin = True, "NEUTRAL", 0.5, 1.0
+        atr_tp, atr_sl = BASE_ATR_TP_MULT, BASE_ATR_SL_MULT
+    # 🧠 -------------------------------------- 🧠
+
     hist_valeurs = [h['valeur'] for h in portfolio.get('valeur_historique', [])]
     rendements = pd.Series(hist_valeurs).pct_change().dropna() if len(hist_valeurs) > 5 else pd.Series()
     current_dd = (( (1+rendements).cumprod() - (1+rendements).cumprod().cummax() ) / (1+rendements).cumprod().cummax()).min() if not rendements.empty else 0.0
     
-    regime = detecter_regime_macro()
     seuil_dynamique = BASE_SEUIL_ENSEMBLE
-    atr_tp, atr_sl = BASE_ATR_TP_MULT, BASE_ATR_SL_MULT
     
-    if regime == "BEAR":
-        seuil_dynamique += 0.03  
-        atr_tp *= 0.8            
-    elif regime == "BULL":
-        seuil_dynamique -= 0.02  
-        atr_tp *= 1.2            
+    # Ajustement IA du seuil basé sur le Master Brain
+    if regime == "BEAR": seuil_dynamique += 0.03  
+    elif regime == "BULL": seuil_dynamique -= 0.02  
 
-    trades_30d = [t for t in portfolio.get('historique', []) if (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(t.get('date_sortie', t['date_entree']), "%Y-%m-%d")).days <= 30]
+    trades_30d = [t for t in portfolio.get('historique', []) if (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(t.get('date_sortie', t.get('date_entree', aujourd_hui)), "%Y-%m-%d")).days <= 30]
     if len(trades_30d) < MIN_TRADES_30D: seuil_dynamique = max(0.50, seuil_dynamique - 0.02)
 
     cb_actif = False
@@ -303,9 +324,11 @@ def executer_trades():
 
     risk_adj = max(0.5, 1.0 - (current_dd / MAX_DD_LIMIT)) if current_dd < 0 else 1.0
 
-    print(f"\n📅 {aujourd_hui} — V14.1 OBSERVABILITY LAYER")
-    print(f"   Régime: {regime} | NAV: {nav_actuelle:.2f}€ | DD: {current_dd:.1%} | Seuil: {seuil_dynamique:.2f}")
-    if cb_actif: print("   🚨 CIRCUIT BREAKER ACTIF — ACHATS BLOQUÉS")
+    print(f"\n📅 {aujourd_hui} — V14.2 OBSERVABILITY LAYER")
+    print(f"   Régime Master: {regime} | Risk Lissé: {risk_macro}x | Darwin Alloc: {alloc_darwin:.1%}")
+    print(f"   NAV: {nav_actuelle:.2f}€ | DD: {current_dd:.1%} | Seuil IA: {seuil_dynamique:.2f}")
+    if cb_actif: print("   🚨 CIRCUIT BREAKER INTERNE ACTIF — ACHATS BLOQUÉS")
+    if not allow_buying: print("   🛑 MASTER BRAIN PANIC MODE — ACHATS BLOQUÉS")
     print("─" * 90)
 
     # 1. GESTION DES SORTIES (Autopsie)
@@ -330,7 +353,7 @@ def executer_trades():
             pnl = val_nette - pos['mise']
             jours_detention = (datetime.strptime(aujourd_hui, "%Y-%m-%d") - datetime.strptime(pos['date_achat'], "%Y-%m-%d")).days
             
-            # 🚨 OBSERVABILITY : Enregistrement de l'autopsie
+            # 🚨 OBSERVABILITY V14.2
             trade_log = {
                 "date_entree": pos['date_achat'],
                 "date_sortie": aujourd_hui,
@@ -338,6 +361,7 @@ def executer_trades():
                 "action": "VENTE",
                 "raison": raison,
                 "pnl": round(pnl, 2),
+                "mise": pos.get('mise', 1), # ✅ TRES IMPORTANT POUR LE SORTINO DU MASTER BRAIN
                 "pnl_pct": round(rendement, 4),
                 "jours_detention": jours_detention,
                 "regime_entree": pos.get('regime_macro', 'UNKNOWN'),
@@ -346,12 +370,12 @@ def executer_trades():
             }
             portfolio['historique'].append(trade_log)
             del portfolio['positions'][ticker]
-            print(f"{ticker:<8} {'—':<6} {emj} VENDU ({raison:<10}) PnL:{pnl:+.0f}€")
+            print(f"{ticker:<8} {'—':<6} {emj} VENDU ({raison:<10}) PnL:{pnl:+.2f}€")
         else:
-            print(f"{ticker:<8} {'—':<6} 🔵 EN POSITION       PnL:{rendement*100:+.1f}%")
+            print(f"{ticker:<8} {'—':<6} 🔵 EN POSITION        PnL:{rendement*100:+.1f}%")
 
-    # 2. GESTION DES ENTRÉES (Empreinte Génétique & Master Brain)
-    if not cb_actif and len(portfolio['positions']) < MAX_POSITIONS:
+    # 2. GESTION DES ENTRÉES
+    if allow_buying and not cb_actif and len(portfolio['positions']) < MAX_POSITIONS:
         candidats = []
         for ticker in [t for t in TICKERS if t not in portfolio['positions']]:
             opp = analyser_opportunite(ticker, seuil_dynamique, est_en_position=False)
@@ -364,28 +388,20 @@ def executer_trades():
             
             ticker, alloc, prix, atr = cand['ticker'], cand['alloc'], cand['prix'], cand['atr']
             
-            if not verifier_correlation(ticker, list(portfolio['positions'].keys())): continue
+            # 🛡️ FILTRE DE CORRÉLATION GLOBAL v5.0
+            est_valide, raison = verifier_correlation_globale(ticker)
+            if not est_valide:
+                print(f"   ↳ 🚫 Achat {ticker} annulé : {raison}")
+                continue
+
             if calculer_cvar_portefeuille(portfolio['positions'], ticker, alloc, nav_actuelle) < MAX_CVAR_95: continue
                 
-            # 🧠 --- LECTURE DU MASTER BRAIN --- 🧠
-            try:
-                with open(SETTINGS_FILE, "r") as f:
-                    settings = json.load(f)
-                    nom_fichier_bot = os.path.basename(FICHIER).replace(".json", "")
-                    alloc_darwin = settings.get("bot_allocations", {}).get(nom_fichier_bot, 1.0)
-                    risk_macro = settings.get("global_risk_multiplier", 1.0)
-            except:
-                alloc_darwin, risk_macro = 1.0, 1.0
-
             alloc_finale = alloc * alloc_darwin * risk_macro
-            # 🧠 --------------------------------- 🧠
-
             mise_nette = (nav_actuelle * alloc_finale * risk_adj) * (1 - FRAIS - SLIPPAGE)
 
             if portfolio['capital_cash'] >= (mise_nette/(1-FRAIS-SLIPPAGE)) and mise_nette > 5:
                 portfolio['capital_cash'] -= (mise_nette / (1 - FRAIS - SLIPPAGE))
                 
-                # 🚨 OBSERVABILITY : Enregistrement de l'empreinte à l'achat
                 portfolio['positions'][ticker] = {
                     "quantite": mise_nette / prix, 
                     "prix_achat": prix, 
@@ -405,7 +421,7 @@ def executer_trades():
     with open(FICHIER, "w") as f: json.dump(portfolio, f, indent=2)
     return portfolio
 
-# ── RÉSUMÉ & ANALYTIQUE (Le Dashboard du Quant) ───────────────────────────────
+# ── RÉSUMÉ & ANALYTIQUE ───────────────────────────────────────────────────────
 def afficher_resume_analytique(portfolio):
     aujourd_hui   = datetime.now().strftime("%Y-%m-%d")
     valeur_totale = calculer_nav(portfolio)
@@ -414,7 +430,6 @@ def afficher_resume_analytique(portfolio):
     trades_fermes = [t for t in portfolio['historique'] if t.get('action') == 'VENTE']
     nb_trades     = len(trades_fermes)
     
-    # 🚨 ANALYTIQUES AVANCÉES
     wins = [t for t in trades_fermes if t.get('pnl', 0) > 0]
     losses = [t for t in trades_fermes if t.get('pnl', 0) <= 0]
     
@@ -432,7 +447,7 @@ def afficher_resume_analytique(portfolio):
     max_dd = (( (1+rendements).cumprod() - (1+rendements).cumprod().cummax() ) / (1+rendements).cumprod().cummax()).min() if not rendements.empty else 0.0
 
     print("\n" + "═" * 75)
-    print(f"📊 DASHBOARD ANALYTIQUE V14.1 — {aujourd_hui}")
+    print(f"📊 DASHBOARD ANALYTIQUE V14.2 — {aujourd_hui}")
     print("═" * 75)
     print(f"  NAV actuelle         : {valeur_totale:.2f} € ({perf_totale:+.2f}%)")
     print(f"  Cash disponible      : {portfolio['capital_cash']:.2f} €")
@@ -444,7 +459,7 @@ def afficher_resume_analytique(portfolio):
     print(f"  Sharpe Ratio         : {sharpe:.2f} | Max Drawdown : {max_dd:.1%}")
     print("═" * 75)
     
-    msg_tg = f"📊 *DASHBOARD V14.1*\n💰 NAV: {valeur_totale:.2f}€\n📈 WinRate: {win_rate:.0f}%\n⚖️ ProfitFactor: {profit_factor:.2f}\n📉 MaxDD: {max_dd:.1%}"
+    msg_tg = f"📊 *DASHBOARD V14.2*\n💰 NAV: {valeur_totale:.2f}€\n📈 WinRate: {win_rate:.0f}%\n⚖️ ProfitFactor: {profit_factor:.2f}\n📉 MaxDD: {max_dd:.1%}"
     gerer_telegram(msg_tg)
     
     return portfolio
