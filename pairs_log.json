@@ -592,5 +592,10 @@
         "price_B": 710.14,
         "z_score": -2.2,
         "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-20 21:45:13",
+        "status": "NO_SIGNAL",
+        "message": "Aucun \u00e9lastique n'est tendu au-del\u00e0 de 2.0 aujourd'hui."
     }
 ]
