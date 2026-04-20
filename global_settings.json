@@ -1,17 +1,28 @@
 {
-  "master_switch_active": true,
-  "global_risk_multiplier": 1.0,
-  "atr_tp_multiplier": 2.0,
-  "atr_sl_multiplier": 1.5,
-  "bot_allocations": {
-    "portfolio": 0.50,
-    "portfolio_mr": 0.30,
-    "portfolio_lr": 0.10,
-    "portfolio_gb": 0.10,
-    "portfolio_conservative": 0.00,
-    "portfolio_aggressive": 0.00,
-    "portfolio_mr_canary": 0.00
-  },
-  "description": "Cerveau Central V2 - Contrôle l'exposition, le risque ATR et les allocations Darwin",
-  "last_update": "2026-04-16 09:30:00"
+    "last_update": "2026-04-20 22:04:41",
+    "last_update_by": "meta_controller_v4.4",
+    "allow_buying": true,
+    "panic_mode": false,
+    "market_regime": "NEUTRAL",
+    "regime_brut_today": "BULL",
+    "global_risk_multiplier": 0.6,
+    "target_risk_multiplier": 0.6,
+    "atr_tp_multiplier": 2.0,
+    "atr_sl_multiplier": 1.5,
+    "description": "\ud83d\udfe1 Prudence \u2014 March\u00e9 mitig\u00e9",
+    "bot_allocations": {
+        "portfolio_mr_canary": 0.1613,
+        "portfolio_gb": 0.1613,
+        "portfolio_aggressive": 0.1613,
+        "portfolio_conservative": 0.0323,
+        "portfolio_mr": 0.1613,
+        "portfolio_lr": 0.1613,
+        "portfolio_v14": 0.1613
+    },
+    "historique_regime_brut": [
+        {
+            "date": "2026-04-20",
+            "regime": "BULL"
+        }
+    ]
 }

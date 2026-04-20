@@ -1,19 +1,7 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 1010.2469049874211,
-  "positions": {
-    "JNJ": {
-      "quantite": 0.086308,
-      "prix_achat": 230.69,
-      "date_achat": "2026-04-20",
-      "mise": 19.94,
-      "tp_cible": 240.2172,
-      "sl_cible": 223.5446,
-      "atr_lors_achat": 4.7636,
-      "atr_tp_mult": 2.0,
-      "atr_sl_mult": 1.5
-    }
-  },
+  "capital_cash": 1030.1872085970251,
+  "positions": {},
   "historique": [
     {
       "date": "2026-04-06",
@@ -63,18 +51,6 @@
       "frais": 0.32,
       "duree_jours": 9,
       "atr_lors_achat": 0
-    },
-    {
-      "date": "2026-04-20",
-      "ticker": "JNJ",
-      "action": "ACHAT",
-      "prix": 230.69,
-      "quantite": 0.086308,
-      "mise": 19.94,
-      "frais": 0.03,
-      "tp_cible": 240.2172,
-      "sl_cible": 223.5446,
-      "atr": 4.7636
     }
   ],
   "valeur_historique": [
@@ -128,10 +104,6 @@
     },
     {
       "date": "2026-04-17",
-      "valeur": 1030.19
-    },
-    {
-      "date": "2026-04-20",
       "valeur": 1030.19
     }
   ],
