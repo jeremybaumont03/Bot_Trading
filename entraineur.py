@@ -1,9 +1,10 @@
 """
-BOT DE PAPER TRADING — entraineur_v14_observability.py (PROP DESK V14.2)
+BOT DE PAPER TRADING — entraineur_v14_observability.py (PROP DESK V14.2 / V15)
 Observability Layer & Portfolio Awareness : 
   ✅ Connecté au Master Brain v4.4 (Obéit au Panic Mode 'allow_buying' et aux ATR dynamiques).
   ✅ Enregistre la 'mise' et l'EV pour le calcul du Ratio de Sortino du Master Brain.
   ✅ VUE GLOBALE v5.0 : Scanne tous les portefeuilles de l'usine pour éviter la sur-corrélation sectorielle.
+  ✅ SÉCURITÉS OPTIMISÉES : Filtres CVaR et Corrélation assouplis pour permettre les achats.
 """
 
 import yfinance as yf
@@ -42,16 +43,16 @@ SLIPPAGE         = 0.0005
 MAX_POSITIONS    = 3
 ATR_PERIOD       = 14
 
-# ── PARAMÈTRES V14 LITE ───────────────────────────────────────────────────────
-BASE_SEUIL_ENSEMBLE = 0.55    
-MIN_TRADES_30D      = 5       
+# ── PARAMÈTRES V14 LITE (OPTIMISÉS) ───────────────────────────────────────────
+BASE_SEUIL_ENSEMBLE = 0.53      # ✅ Baisse du seuil IA pour plus d'opportunités
+MIN_TRADES_30D      = 5        
 MAX_DD_LIMIT        = -0.15
-MAX_CVAR_95         = -0.04   
+MAX_CVAR_95         = -0.09     # ✅ CVaR relâché (tolère jusqu'à -9% de moyenne sur les pires jours)
 COOLDOWN_JOURS      = 3
 KELLY_FRACTION      = 0.5
 MAX_ALLOC_PAR_TRADE = 0.25
 MIN_ALLOC_PAR_TRADE = 0.02
-CORR_MAX            = 0.75
+CORR_MAX            = 0.85      # ✅ Tolère plus de corrélation avec l'usine (85% au lieu de 75%)
 VOL_TARGET          = 0.15
 BASE_ATR_TP_MULT    = 2.0
 BASE_ATR_SL_MULT    = 1.5
@@ -324,7 +325,7 @@ def executer_trades():
 
     risk_adj = max(0.5, 1.0 - (current_dd / MAX_DD_LIMIT)) if current_dd < 0 else 1.0
 
-    print(f"\n📅 {aujourd_hui} — V14.2 OBSERVABILITY LAYER")
+    print(f"\n📅 {aujourd_hui} — V14.2 OBSERVABILITY LAYER (Paramètres Assouplis)")
     print(f"   Régime Master: {regime} | Risk Lissé: {risk_macro}x | Darwin Alloc: {alloc_darwin:.1%}")
     print(f"   NAV: {nav_actuelle:.2f}€ | DD: {current_dd:.1%} | Seuil IA: {seuil_dynamique:.2f}")
     if cb_actif: print("   🚨 CIRCUIT BREAKER INTERNE ACTIF — ACHATS BLOQUÉS")
@@ -394,7 +395,9 @@ def executer_trades():
                 print(f"   ↳ 🚫 Achat {ticker} annulé : {raison}")
                 continue
 
-            if calculer_cvar_portefeuille(portfolio['positions'], ticker, alloc, nav_actuelle) < MAX_CVAR_95: continue
+            if calculer_cvar_portefeuille(portfolio['positions'], ticker, alloc, nav_actuelle) < MAX_CVAR_95: 
+                print(f"   ↳ 🚫 Achat {ticker} annulé : Risque CVaR trop élevé")
+                continue
                 
             alloc_finale = alloc * alloc_darwin * risk_macro
             mise_nette = (nav_actuelle * alloc_finale * risk_adj) * (1 - FRAIS - SLIPPAGE)
