@@ -1,0 +1,12 @@
+{
+    "capital_depart": 1000.0,
+    "capital_cash": 1000.0,
+    "positions": {},
+    "historique": [],
+    "valeur_historique": [
+        {
+            "date": "2026-04-21",
+            "valeur": 1000.0
+        }
+    ]
+}
