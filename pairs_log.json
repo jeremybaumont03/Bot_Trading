@@ -597,5 +597,32 @@
         "date": "2026-04-20 21:45:13",
         "status": "NO_SIGNAL",
         "message": "Aucun \u00e9lastique n'est tendu au-del\u00e0 de 2.0 aujourd'hui."
+    },
+    {
+        "date": "2026-04-21 21:43:58",
+        "asset_A": "NFLX",
+        "asset_B": "BTC-USD",
+        "price_A": 92.58,
+        "price_B": 75523.81,
+        "z_score": -2.18,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-21 21:43:58",
+        "asset_A": "NVDA",
+        "asset_B": "XLK",
+        "price_A": 199.88,
+        "price_B": 154.69,
+        "z_score": -2.08,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-21 21:43:58",
+        "asset_A": "BAC",
+        "asset_B": "XLK",
+        "price_A": 53.48,
+        "price_B": 154.69,
+        "z_score": -2.03,
+        "action": "LONG THE SPREAD"
     }
 ]
