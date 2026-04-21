@@ -1,6 +1,6 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 783.0672118719293,
+  "capital_cash": 743.6804624793824,
   "positions": {
     "HD": {
       "quantite": 0.26946252753814715,
@@ -15,6 +15,19 @@
       "regime_macro": "CHOP",
       "poids_portefeuille": 0.09429164294157222
     },
+    "GLD": {
+      "quantite": 0.15327430228267883,
+      "prix_achat": 445.92999267578125,
+      "date_achat": "2026-04-17",
+      "mise": 68.45228692468748,
+      "tp_cible": 462.9557146344866,
+      "sl_cible": 433.1607012067522,
+      "proba": 0.6094524727985408,
+      "ev": 0.007210974762378836,
+      "atr_local": 8.512860979352679,
+      "regime_macro": "CHOP",
+      "poids_portefeuille": 0.06845228692468748
+    },
     "V": {
       "quantite": 0.2947298198248527,
       "prix_achat": 317.0199890136719,
@@ -27,19 +40,6 @@
       "atr_local": 5.977857317243304,
       "regime_macro": "CHOP",
       "poids_portefeuille": 0.09357560765435782
-    },
-    "GS": {
-      "quantite": 0.028403212182375688,
-      "prix_achat": 926.5499877929688,
-      "date_achat": "2026-04-21",
-      "mise": 26.356530696906653,
-      "tp_cible": 978.0900006975446,
-      "sl_cible": 887.8949781145368,
-      "proba": 0.6727620450454102,
-      "ev": 0.009317872440838721,
-      "atr_local": 25.770006452287948,
-      "regime_macro": "NEUTRAL",
-      "poids_portefeuille": 0.036505845648409974
     }
   },
   "historique": [
@@ -137,20 +137,6 @@
       "frais": 0.2,
       "duree_jours": 11,
       "atr_lors_achat": 0
-    },
-    {
-      "date_entree": "2026-04-17",
-      "date_sortie": "2026-04-21",
-      "ticker": "GLD",
-      "action": "VENTE",
-      "raison": "STOP LOSS",
-      "pnl": -2.71,
-      "mise": 68.45228692468748,
-      "pnl_pct": -0.0367,
-      "jours_detention": 4,
-      "regime_entree": "CHOP",
-      "proba_entree": 0.6094524727985408,
-      "ev_entree": 0.007210974762378836
     }
   ],
   "valeur_historique": [
@@ -225,10 +211,6 @@
     {
       "date": "2026-04-20",
       "valeur": 998.55
-    },
-    {
-      "date": "2026-04-21",
-      "valeur": 993.41
     }
   ]
 }
