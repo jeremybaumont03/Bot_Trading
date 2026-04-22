@@ -1,51 +1,38 @@
-name: Trading Bot Multi-Stratégies
+name: 🤖 2. Bot Execution
 
 on:
   schedule:
-    # 21h15 UTC = 23h15 Paris (Heure d'été)
-    - cron: '15 21 * * 1-5'
+    - cron: '30 21 * * 1-5' # 21:30 UTC (30 mins after Brain)
   workflow_dispatch:
+
 concurrency:
   group: usine-trading
   cancel-in-progress: false
+
 jobs:
-  run-bot:
+  run-bots:
     runs-on: ubuntu-latest
-    # 🚨 TRÈS IMPORTANT : Donne le droit à GitHub de sauvegarder tes fichiers
     permissions:
       contents: write
-
     steps:
-      - name: Checkout du code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Récupère tout l'historique pour éviter les erreurs de push
-
-      - name: Installation Python 3.11
-        uses: actions/setup-python@v5
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip' # Accélère les lancements futurs
-
-      - name: Installation des dépendances
-        run: |
+          cache: 'pip'
+      - run: |
           pip install --upgrade pip
-          pip install yfinance pandas numpy scikit-learn requests
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          pip install yfinance pandas numpy scikit-learn requests joblib
 
-      # 🧠 1. Le Boss parle en premier (AVEC l'antenne Telegram)
-      - name: 🧠 Lancement du Meta-Controlleur (Génère global_settings.json)
+      - name: 🚀 Execute Trading Bots
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python meta_controlleur.py || true
-
-      # 🤖 2. L'armée de bots s'exécute
-      - name: Lancement des 7 Bots
-        env:
-          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: |
+        run: 
+          # The "|| true" ensures if one bot fails, the others still run!
+          python pairs_bot.py || true
           python entraineur.py || true
           python entraineur_lr.py || true
           python entraineur_gb.py || true
@@ -53,18 +40,17 @@ jobs:
           python entraineur_aggressive.py || true
           python entraineur_meanreversion.py || true
           python entraineur_meanreversion_canard.py || true
-          
-      - name: Sauvegarder et Synchroniser
+          python entraineur_retail.py || true
+
+      - name: 💾 Save Portfolios
         run: |
-          git config --global user.name "Trading Bot"
-          git config --global user.email "bot@trading.local"
+          git config --global user.name "Hedge Fund Execution"
+          git config --global user.email "execution@trading.local"
           git stash || true
           git pull --rebase origin main || true
           git stash pop || true
-          git add *.json backups/ || true
+          git add portfolio*.json backups/ || true
           if ! git diff --staged --quiet; then
-            git commit -m "📊 MAJ Multi-stratégies - $(date '+%d/%m/%Y %H:%M')"
+            git commit -m "💼 Portfolios Updated - $(date '+%d/%m/%Y %H:%M')"
             git push
-          else
-            echo "Aucun changement à sauvegarder aujourd'hui."
           fi
