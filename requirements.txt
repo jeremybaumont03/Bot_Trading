@@ -6,3 +6,8 @@ joblib
 requests
 hmmlearn
 statsmodels
+ta
+scipy
+pydantic
+loguru
+tenacity
