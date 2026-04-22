@@ -1,10 +1,7 @@
 """
-🧠 META CONTROLLEUR v4.4 — INSTITUTIONAL GRADE (PRODUCTION READY)
-Améliorations v4.4 (Data Integrity) :
-  ✅ Déduplication temporelle : Le filtre 3 jours ne compte qu'une entrée par date.
-  ✅ Sémantique stricte : "NORMAL" est évalué comme NEUTRAL (fini le biais haussier).
-  ✅ Filtrage Darwin Paranoïaque : Le Sortino ne calcule que sur des ventes réelles avec PnL.
-  ✅ Double Radar Macro (SPY + QQQ) et Panic Mode Hybride conservés.
+🧠 META CONTROLLEUR v5.0 — INSTITUTIONAL GRADE + SENTIMENT ENGINE
+Intègre la robustesse v4.4 (Darwin Paranoïaque, Déduplication, SPY+QQQ) 
+ET les Sentiments v5.0 (VADER) en mode Shadow.
 """
 
 import json
@@ -23,6 +20,7 @@ BASE_DIR      = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_FILE = os.path.join(BASE_DIR, "global_settings.json")
 KMEANS_FILE   = os.path.join(BASE_DIR, "kmeans_log.json")
 HMM_FILE      = os.path.join(BASE_DIR, "regime_log.json")
+SENTIMENT_FILE= os.path.join(BASE_DIR, "sentiment_log.json")
 
 TOKEN_TELEGRAM   = os.environ.get("TELEGRAM_TOKEN", "")
 CHAT_ID_TELEGRAM = os.environ.get("TELEGRAM_CHAT_ID", "")
@@ -31,6 +29,9 @@ CONFIRMATION_JOURS = 3
 ALLOCATION_CAP     = 0.40  # Max 40% du capital par bot
 MIN_TRADES_SHARPE  = 10
 VOLATILITE_PANIQUE = 0.30
+
+# 🔒 SHADOW MODE: Fixé à 0.00 pour observer les sentiments sans impacter le budget
+SENTIMENT_FORCE    = 0.00  
 
 PARAMS_REGIME = {
     "BULL":    {"target_risk": 1.0, "atr_tp": 2.5, "atr_sl": 1.5, "desc": "🟢 Plein régime"},
@@ -48,7 +49,7 @@ def normaliser_regime(regime_raw):
     if regime_raw is None: return "NEUTRAL"
     r = str(regime_raw).upper()
     
-    # ✅ FIX: "NORMAL" n'est plus haussier, il tombe dans le fallback NEUTRAL
+    # ✅ FIX v4.4: "NORMAL" n'est plus haussier, il tombe dans le fallback NEUTRAL
     if any(x in r for x in ["BULL", "HAUSSIER", "ACHAT", "UP"]): 
         return "BULL"
     elif any(x in r for x in ["BEAR", "BAISSIER", "CRISE", "DANGER", "VOLATILE", "DOWN"]): 
@@ -116,7 +117,7 @@ def appliquer_filtre_confirmation(regime_brut, settings_actuels):
     historique = settings_actuels.get("historique_regime_brut", [])
     aujourd_hui = datetime.now().strftime("%Y-%m-%d")
 
-    # ✅ FIX: Déduplication temporelle (Écrase si on relance le même jour)
+    # ✅ FIX v4.4: Déduplication temporelle (Écrase si on relance le même jour)
     if historique and historique[-1].get("date") == aujourd_hui:
         historique[-1]["regime"] = regime_brut
     else:
@@ -144,7 +145,7 @@ def calculer_darwin_allocations():
         try:
             with open(f, "r") as pf: data = json.load(pf)
             
-            # ✅ FIX: Filtrage Darwin paranoïaque (Seulement de vrais trades clôturés)
+            # ✅ FIX v4.4: Filtrage Darwin paranoïaque (Seulement de vrais trades clôturés)
             trades_fermes = [
                 t for t in data.get("historique", []) 
                 if t.get("action") == "VENTE" 
@@ -183,7 +184,7 @@ def calculer_darwin_allocations():
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    logging.info("🚀 MASTER BRAIN v4.4 — Déploiement Final (Data Integrity)")
+    logging.info("🚀 MASTER BRAIN v5.0 — Déploiement Final (Data Integrity + Sentiment)")
     
     try:
         with open(SETTINGS_FILE, "r") as f: settings_actuels = json.load(f)
@@ -194,7 +195,22 @@ def main():
     config = PARAMS_REGIME.get(regime_confirme, PARAMS_REGIME["NEUTRAL"])
 
     ancien_risque = float(settings_actuels.get("global_risk_multiplier", 0.6))
-    risque_cible  = config["target_risk"]
+    risque_base   = config["target_risk"]
+    
+    # 🤖 INTÉGRATION DU SENTIMENT (Mode Shadow)
+    score_sentiment = 0.0
+    try:
+        if os.path.exists(SENTIMENT_FILE):
+            with open(SENTIMENT_FILE, "r") as f: 
+                score_sentiment = json.load(f).get("sentiment_lisse", 0.0)
+    except: pass
+
+    # Sécurité sur le score et application de la force
+    score_sentiment = max(-1.0, min(1.0, score_sentiment))
+    sentiment_multiplier = 1 + (score_sentiment * SENTIMENT_FORCE)
+    
+    risque_cible = risque_base * sentiment_multiplier
+    risque_cible = max(0.2, min(risque_cible, 1.5)) # Cap global du risque
     
     # Risk Smoothing Asymétrique
     risque_lisse  = risque_cible if risque_cible < ancien_risque else round((0.7 * ancien_risque) + (0.3 * risque_cible), 3)
@@ -214,13 +230,14 @@ def main():
 
     global_settings = {
         "last_update"            : datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-        "last_update_by"         : "meta_controller_v4.4",
+        "last_update_by"         : "meta_controller_v5.0",
         "allow_buying"           : allow_buying,
         "panic_mode"             : panic_mode,
         "market_regime"          : regime_confirme,
         "regime_brut_today"      : regime_brut,
         "global_risk_multiplier" : risque_lisse,
         "target_risk_multiplier" : risque_cible,
+        "sentiment_impact"       : f"{sentiment_multiplier:.2f}x", # 🤖 Enregistré pour l'audit
         "atr_tp_multiplier"      : config["atr_tp"],
         "atr_sl_multiplier"      : config["atr_sl"],
         "description"            : config["desc"],
@@ -236,8 +253,9 @@ def main():
     ancien_regime = settings_actuels.get("market_regime", "UNKNOWN")
     if (regime_confirme != ancien_regime and ancien_regime != "UNKNOWN") or panic_mode:
         emoji = "🚨" if panic_mode else {"BULL": "🟢", "NEUTRAL": "🟡", "BEAR": "🔴"}.get(regime_confirme, "⚪")
-        msg = (f"🧠 *Master Brain v4.4*\n\n{emoji} {'**PANIC MODE**' if panic_mode else f'`{ancien_regime}` → `{regime_confirme}`'}\n\n"
-               f"📉 Cible : `{risque_cible}x` | 🌊 Lissé : `{risque_lisse}x`\n"
+        msg = (f"🧠 *Master Brain v5.0*\n\n{emoji} {'**PANIC MODE**' if panic_mode else f'`{ancien_regime}` → `{regime_confirme}`'}\n\n"
+               f"📰 Sentiment Sizing : `{sentiment_multiplier:.2f}x` (Shadow Mode)\n"
+               f"📉 Cible Finale : `{risque_cible:.2f}x` | 🌊 Lissé : `{risque_lisse:.2f}x`\n"
                f"🛑 Achats : `{'OUI' if allow_buying else 'NON'}`\n\n📋 {config['desc']}")
         envoyer_telegram(msg)
 
