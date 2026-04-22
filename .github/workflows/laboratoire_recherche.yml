@@ -1,58 +1,52 @@
-name: Laboratoire de Recherche (Ligne B)
+name: 🧠 1. Intelligence & Risk
 
 on:
   schedule:
-    # 21h00 UTC = 23h00 Paris (Heure d'été) -> Tourne AVANT les bots !
-    - cron: '00 21 * * 1-5'
+    - cron: '00 21 * * 1-5' # 21:00 UTC
   workflow_dispatch:
+
 concurrency:
   group: usine-trading
   cancel-in-progress: false
+
 jobs:
-  run-labo:
+  run-brain:
     runs-on: ubuntu-latest
-    
     permissions:
       contents: write
-
     steps:
-      - name: Checkout du code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-
-      - name: Installation de Python
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
-
-      - name: Installation des librairies
-        run: |
+          python-version: '3.11'
+          cache: 'pip'
+      - run: |
           pip install --upgrade pip
-          pip install yfinance pandas statsmodels hmmlearn scikit-learn requests
+          pip install yfinance pandas numpy scikit-learn requests joblib feedparser vaderSentiment statsmodels hmmlearn
 
-      - name: 🚲 Exécution K-Means
-        run: python regime_kmeans.py || echo "K-Means a échoué mais on continue"
+      - name: 🔬 Run Labs (Data)
+        run: |
+          python regime_kmeans.py || true
+          python regime_hmm.py || true
+          python labo_sentiment.py || true
 
-      - name: 🏎️ Exécution HMM
-        run: python regime_hmm.py || echo "HMM a échoué mais on continue"
-
-      - name: ⚖️ Exécution Pairs Trading
+      - name: 🧠 Run Meta-Controller (Boss)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python pairs_bot.py || echo "Pairs Bot a échoué mais on continue"
-      - name: 💾 Sauvegarde des journaux de recherche
+        run: python meta_controlleur.py || true
+
+      - name: 💾 Save Intelligence State
         run: |
-          git config --local user.email "action@github.com"
-          git config --local user.name "GitHub Action Bot"
+          git config --global user.name "Hedge Fund Brain"
+          git config --global user.email "brain@trading.local"
           git stash || true
           git pull --rebase origin main || true
           git stash pop || true
-          git add pairs_log.json regime_log.json kmeans_log.json || true
+          git add *_log.json global_settings.json || true
           if ! git diff --staged --quiet; then
-            git commit -m "🔬 Mise à jour des logs du Laboratoire - $(date '+%d/%m/%Y %H:%M')"
+            git commit -m "🧠 Market Intelligence Updated - $(date '+%d/%m/%Y %H:%M')"
             git push
-          else
-            echo "Aucun nouveau log à enregistrer."
           fi
