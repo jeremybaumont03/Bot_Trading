@@ -1,10 +1,10 @@
 """
-🎯 MOTEUR ALPHA & PORTFOLIO (PROP DESK V15) — VERSION CORRIGÉE
-Le cerveau d'exécution final du Mini Hedge Fund.
+🎯 MOTEUR ALPHA & PORTFOLIO (PROP DESK V15) — VERSION SENTIMENT
+Le cerveau d'exécution final du Mini Hedge Fund avec intégration VADER.
+  ✅ Ajustement Dynamique : Le seuil d'achat s'adapte au Sentiment Macro (FOMO vs Paranoïa).
   ✅ Vrai Cross-Sectional : Les features sont rankées quotidiennement sur tout l'univers.
-  ✅ Clustering K-Means : Regroupe les candidats par comportement pour forcer la diversification.
-  ✅ Exécution Top-Down : Obéit strictement au risque dicté par le Moteur Macro.
-  ✅ Performance : 1 seul téléchargement YFinance pour tout le script.
+  ✅ Clustering K-Means : Regroupe les candidats par comportement.
+  ✅ Sécurité Institutionnelle : Refuse de trader si les ordres du Boss ont plus de 2 heures.
 """
 
 import yfinance as yf
@@ -36,7 +36,7 @@ TICKERS = [
 
 CAPITAL_DEPART  = 1000.0
 MAX_POSITIONS   = 3
-MIN_PROBA_ACHAT = 0.55
+MIN_PROBA_BASE  = 0.55  # Seuil de base, sera ajusté par les sentiments
 FRAIS           = 0.001
 SLIPPAGE        = 0.0005
 
@@ -91,7 +91,6 @@ def sauvegarder_portfolio(portfolio):
         json.dump(portfolio, f, indent=4, default=str)
 
 def get_prix(ticker):
-    """Retourne le dernier prix depuis le cache."""
     global DF_WIDE
     if DF_WIDE is not None and ticker in DF_WIDE.columns:
         return float(DF_WIDE[ticker].dropna().iloc[-1])
@@ -104,36 +103,46 @@ def calculer_nav(portfolio):
         nav += pos["quantite"] * prix if prix > 0 else pos["mise"]
     return round(nav, 2)
 
-# ── 1. LECTURE DU CERVEAU MACRO ───────────────────────────────────────────────
+# ── 1. LECTURE DU CERVEAU MACRO & SENTIMENTS ──────────────────────────────────
 def lire_ordres_macro():
     try:
+        if not os.path.exists(SETTINGS_FILE):
+            raise FileNotFoundError("global_settings.json introuvable.")
+
         with open(SETTINGS_FILE, "r") as f:
             settings = json.load(f)
+
+        # 🚨 SÉCURITÉ INSTITUTIONNELLE : Check fraîcheur (Timeout 2h)
+        last_update_str = settings.get("last_update", "2000-01-01 00:00:00")
+        last_update = datetime.strptime(last_update_str, "%Y-%m-%d %H:%M:%S")
+        age_secondes = (datetime.now() - last_update).total_seconds()
+        
+        if age_secondes > 7200:
+            print(f"🛑 [CRITICAL] Ordres du Boss trop vieux ({age_secondes}s). Sécurité activée.")
+            sys.exit(1)
 
         if not settings.get("master_switch_active", True):
             print("🛑 Master Switch OFF — arrêt.")
             sys.exit(0)
 
         regime    = settings.get("market_regime", "NEUTRAL")
-        risk_mult = settings.get("global_risk_multiplier", settings.get("risk_multiplier", 1.0))
+        risk_mult = settings.get("global_risk_multiplier", 1.0)
         allow_buying = regime in ["BULL", "NEUTRAL"]
+        
+        # 🤖 LECTURE DU SENTIMENT
+        sentiment_str = settings.get("sentiment_impact", "1.00x")
+        try:
+            sentiment_val = float(sentiment_str.replace("x", ""))
+        except:
+            sentiment_val = 1.0
 
-        print(f"🧠 Ordres Macro : Régime={regime} | Risk={risk_mult}x | Achats={'✅' if allow_buying else '🛑'}")
+        print(f"🧠 Ordres Macro : Régime={regime} | Risk={risk_mult}x | Sentiment={sentiment_val}x | Achats={'✅' if allow_buying else '🛑'}")
 
         settings["allow_buying"] = allow_buying
         settings["global_risk_multiplier"] = risk_mult
+        settings["sentiment_val"] = sentiment_val # Passé au ML
         return settings
 
-    except FileNotFoundError:
-        print("⚠️ global_settings.json introuvable — paramètres par défaut")
-        return {
-            "market_regime"          : "NEUTRAL",
-            "global_risk_multiplier" : 0.6,
-            "atr_tp_multiplier"      : 2.0,
-            "atr_sl_multiplier"      : 1.5,
-            "allow_buying"           : True,
-            "master_switch_active"   : True
-        }
     except Exception as e:
         print(f"❌ Erreur lecture Macro : {e}")
         sys.exit(1)
@@ -191,8 +200,8 @@ def construire_panel_global():
     print(f"✅ Panel : {len(DF_PANEL)} lignes | {DF_PANEL.index.get_level_values('Ticker').nunique()} tickers")
     return DF_PANEL
 
-# ── 4. MACHINE LEARNING ALPHA ─────────────────────────────────────────────────
-def entrainer_et_predire_alpha():
+# ── 4. MACHINE LEARNING ALPHA (AVEC SENTIMENT) ────────────────────────────────
+def entrainer_et_predire_alpha(macro_settings):
     global DF_PANEL
     print("🤖 Entraînement du modèle Alpha Global...")
 
@@ -224,13 +233,21 @@ def entrainer_et_predire_alpha():
     resultats = predict_data.reset_index()[["Ticker", "Close", "Vol_20d"]].copy()
     resultats["Proba_Alpha"] = probs
 
+    # 🤖 AJUSTEMENT DYNAMIQUE DU SEUIL SELON LE SENTIMENT
+    sentiment_val = macro_settings.get("sentiment_val", 1.0)
+    
+    # Si le sentiment est bon (ex: 1.15), le seuil baisse (plus d'opportunités, FOMO)
+    # Si le sentiment est mauvais (ex: 0.85), le seuil monte (plus exigeant, Paranoïa)
+    seuil_dynamique = MIN_PROBA_BASE - ((sentiment_val - 1.0) * 0.15)
+    seuil_dynamique = max(0.50, min(0.65, seuil_dynamique)) # Limites de sécurité dures
+
     candidats = (
-        resultats[resultats["Proba_Alpha"] > MIN_PROBA_ACHAT]
+        resultats[resultats["Proba_Alpha"] > seuil_dynamique]
         .sort_values("Proba_Alpha", ascending=False)
         .reset_index(drop=True)
     )
 
-    print(f"🌟 {len(candidats)} candidats trouvés (seuil {MIN_PROBA_ACHAT:.0%})")
+    print(f"🌟 {len(candidats)} candidats trouvés (Seuil dynamique {seuil_dynamique:.1%} basé sur Sentiment {sentiment_val}x)")
     return candidats
 
 # ── 5. K-MEANS CLUSTERING (Diversification) ───────────────────────────────────
@@ -426,15 +443,20 @@ def afficher_resume(portfolio):
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
-    print("🦅 MOTEUR ALPHA & PORTFOLIO V15 — PROP DESK")
+    print("🦅 MOTEUR ALPHA & PORTFOLIO V15 — PROP DESK (SENTIMENT)")
     print(f"⏰ {datetime.now().strftime('%d/%m/%Y %H:%M')}")
     print("=" * 60)
 
     faire_backup()
+    
+    # 1. Lit les ordres et le Sentiment
     macro_settings = lire_ordres_macro()
+    
     charger_donnees()
     construire_panel_global()
-    candidats = entrainer_et_predire_alpha()
+    
+    # 2. Transmet le Sentiment au modèle Alpha
+    candidats = entrainer_et_predire_alpha(macro_settings)
     
     places_dispo = MAX_POSITIONS - len(charger_portfolio().get("positions", {}))
     selection    = filtrer_par_clustering(candidats, MAX_POSITIONS)
