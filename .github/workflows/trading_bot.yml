@@ -2,7 +2,7 @@ name: 🤖 2. Bot Execution
 
 on:
   schedule:
-    - cron: '30 21 * * 1-5' # 21:30 UTC (30 mins after Brain)
+    - cron: '30 21 * * 1-5'
   workflow_dispatch:
 
 concurrency:
@@ -22,34 +22,51 @@ jobs:
         with:
           python-version: '3.11'
           cache: 'pip'
-      - run: |
-          pip install --upgrade pip
-          pip install yfinance pandas numpy scikit-learn requests joblib
+          
+      - name: Installation des dépendances
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
 
-      - name: 🚀 Execute Trading Bots
+      - name: 🚀 Execute Trading Bots (Isolated & Time-boxed)
         env:
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: 
-          # The "|| true" ensures if one bot fails, the others still run!
-          python pairs_bot.py || true
-          python entraineur.py || true
-          python entraineur_lr.py || true
-          python entraineur_gb.py || true
-          python entraineur_conservative.py || true
-          python entraineur_aggressive.py || true
-          python entraineur_meanreversion.py || true
-          python entraineur_meanreversion_canard.py || true
-          python entraineur_retail.py || true
+        run: |
+          BOTS=(
+            "pairs_bot.py"
+            "entraineur.py"
+            "entraineur_lr.py"
+            "entraineur_gb.py"
+            "entraineur_conservative.py"
+            "entraineur_aggressive.py"
+            "entraineur_meanreversion.py"
+            "entraineur_meanreversion_canard.py"
+            "entraineur_retail.py"
+          )
+          
+          for bot in "${BOTS[@]}"; do
+            if [ -f "$bot" ]; then
+              echo "⚡ Lancement de $bot..."
+              if [ "$bot" == "entraineur_retail.py" ]; then
+                # V15 gets 15 minutes (900 seconds)
+                timeout 900 python "$bot" || echo "⚠️ Échec ou Timeout (900s) sur $bot."
+              else
+                # Others get 5 minutes (300 seconds)
+                timeout 300 python "$bot" || echo "⚠️ Échec ou Timeout (300s) sur $bot."
+              fi
+            fi
+          done
 
-      - name: 💾 Save Portfolios
+      - name: 💾 Save Portfolios (Safe Git)
         run: |
           git config --global user.name "Hedge Fund Execution"
           git config --global user.email "execution@trading.local"
-          git stash || true
-          git pull --rebase origin main || true
-          git stash pop || true
+          git pull --rebase --autostash origin main || true
+          
+          # Only save portfolios and backups
           git add portfolio*.json backups/ || true
+          
           if ! git diff --staged --quiet; then
             git commit -m "💼 Portfolios Updated - $(date '+%d/%m/%Y %H:%M')"
             git push
