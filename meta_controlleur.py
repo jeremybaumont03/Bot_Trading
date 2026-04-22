@@ -1,7 +1,7 @@
 """
 🧠 META CONTROLLEUR v5.0 — INSTITUTIONAL GRADE + SENTIMENT ENGINE
 Intègre la robustesse v4.4 (Darwin Paranoïaque, Déduplication, SPY+QQQ) 
-ET les Sentiments v5.0 (VADER) en mode Shadow.
+ET les Sentiments v6.1 (VADER + Confiance) en mode Shadow.
 """
 
 import json
@@ -184,7 +184,7 @@ def calculer_darwin_allocations():
 
 # ── MAIN ──────────────────────────────────────────────────────────────────────
 def main():
-    logging.info("🚀 MASTER BRAIN v5.0 — Déploiement Final (Data Integrity + Sentiment)")
+    logging.info("🚀 MASTER BRAIN v5.0 — Déploiement Final (Data Integrity + Sentiment + Confiance)")
     
     try:
         with open(SETTINGS_FILE, "r") as f: settings_actuels = json.load(f)
@@ -197,17 +197,22 @@ def main():
     ancien_risque = float(settings_actuels.get("global_risk_multiplier", 0.6))
     risque_base   = config["target_risk"]
     
-    # 🤖 INTÉGRATION DU SENTIMENT (Mode Shadow)
+    # 🤖 INTÉGRATION DU SENTIMENT (Mode Shadow) avec Analyse de Confiance
     score_sentiment = 0.0
+    confiance_sentiment = 0.0
     try:
         if os.path.exists(SENTIMENT_FILE):
             with open(SENTIMENT_FILE, "r") as f: 
-                score_sentiment = json.load(f).get("sentiment_lisse", 0.0)
+                data_s = json.load(f)
+                score_sentiment = data_s.get("sentiment_lisse", 0.0)
+                confiance_sentiment = data_s.get("confidence_score", 0.0)
     except: pass
 
-    # Sécurité sur le score et application de la force
+    # Sécurité sur le score et application de la force + confiance
     score_sentiment = max(-1.0, min(1.0, score_sentiment))
-    sentiment_multiplier = 1 + (score_sentiment * SENTIMENT_FORCE)
+    
+    # 🎯 La confiance agit comme un filtre : si la confiance est faible, l'impact est réduit
+    sentiment_multiplier = 1 + (score_sentiment * SENTIMENT_FORCE * confiance_sentiment)
     
     risque_cible = risque_base * sentiment_multiplier
     risque_cible = max(0.2, min(risque_cible, 1.5)) # Cap global du risque
@@ -237,7 +242,8 @@ def main():
         "regime_brut_today"      : regime_brut,
         "global_risk_multiplier" : risque_lisse,
         "target_risk_multiplier" : risque_cible,
-        "sentiment_impact"       : f"{sentiment_multiplier:.2f}x", # 🤖 Enregistré pour l'audit
+        "sentiment_impact"       : f"{sentiment_multiplier:.2f}x",
+        "sentiment_confidence"   : f"{confiance_sentiment:.0%}", # 🤖 Confiance ajoutée
         "atr_tp_multiplier"      : config["atr_tp"],
         "atr_sl_multiplier"      : config["atr_sl"],
         "description"            : config["desc"],
@@ -245,6 +251,7 @@ def main():
         "historique_regime_brut" : historique,
     }
 
+    # Sauvegarde Atomique
     temp_file = SETTINGS_FILE + ".tmp"
     with open(temp_file, "w") as f: json.dump(global_settings, f, indent=4)
     os.replace(temp_file, SETTINGS_FILE)
@@ -254,7 +261,7 @@ def main():
     if (regime_confirme != ancien_regime and ancien_regime != "UNKNOWN") or panic_mode:
         emoji = "🚨" if panic_mode else {"BULL": "🟢", "NEUTRAL": "🟡", "BEAR": "🔴"}.get(regime_confirme, "⚪")
         msg = (f"🧠 *Master Brain v5.0*\n\n{emoji} {'**PANIC MODE**' if panic_mode else f'`{ancien_regime}` → `{regime_confirme}`'}\n\n"
-               f"📰 Sentiment Sizing : `{sentiment_multiplier:.2f}x` (Shadow Mode)\n"
+               f"📰 Sentiment Sizing : `{sentiment_multiplier:.2f}x` (Confiance: {confiance_sentiment:.0%})\n"
                f"📉 Cible Finale : `{risque_cible:.2f}x` | 🌊 Lissé : `{risque_lisse:.2f}x`\n"
                f"🛑 Achats : `{'OUI' if allow_buying else 'NON'}`\n\n📋 {config['desc']}")
         envoyer_telegram(msg)
