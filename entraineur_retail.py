@@ -5,6 +5,7 @@ Le cerveau d'exécution final du Mini Hedge Fund avec intégration VADER.
   ✅ Vrai Cross-Sectional : Les features sont rankées quotidiennement sur tout l'univers.
   ✅ Clustering K-Means : Regroupe les candidats par comportement.
   ✅ Sécurité Institutionnelle : Refuse de trader si les ordres du Boss ont plus de 2 heures.
+  ✅ Sauvegarde Atomique : Protège le portfolio contre la corruption de fichiers.
 """
 
 import yfinance as yf
@@ -87,8 +88,11 @@ def charger_portfolio():
     return p
 
 def sauvegarder_portfolio(portfolio):
-    with open(PORTFOLIO_FILE, "w") as f:
+    # Atomic write to prevent portfolio corruption
+    temp_file = PORTFOLIO_FILE + ".tmp"
+    with open(temp_file, "w") as f:
         json.dump(portfolio, f, indent=4, default=str)
+    os.replace(temp_file, PORTFOLIO_FILE)
 
 def get_prix(ticker):
     global DF_WIDE
@@ -464,6 +468,8 @@ if __name__ == "__main__":
     portfolio              = charger_portfolio()
     portfolio, trades      = executer_marche(selection, macro_settings, portfolio)
     portfolio              = afficher_resume(portfolio)
+    
+    # 💾 SAUVEGARDE ATOMIQUE DU PORTFOLIO
     sauvegarder_portfolio(portfolio)
 
     nav_fin = calculer_nav(portfolio)
