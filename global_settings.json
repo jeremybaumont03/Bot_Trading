@@ -1,23 +1,26 @@
 {
-    "last_update": "2026-04-21 22:01:44",
-    "last_update_by": "meta_controller_v4.4",
+    "last_update": "2026-04-22 21:50:36",
+    "last_update_by": "meta_controller_v5.0",
     "allow_buying": true,
     "panic_mode": false,
-    "market_regime": "NEUTRAL",
+    "market_regime": "BULL",
     "regime_brut_today": "BULL",
-    "global_risk_multiplier": 0.6,
-    "target_risk_multiplier": 0.6,
-    "atr_tp_multiplier": 2.0,
+    "global_risk_multiplier": 0.72,
+    "target_risk_multiplier": 1.0,
+    "sentiment_impact": "1.00x",
+    "sentiment_confidence": "100%",
+    "atr_tp_multiplier": 2.5,
     "atr_sl_multiplier": 1.5,
-    "description": "\ud83d\udfe1 Prudence \u2014 March\u00e9 mitig\u00e9",
+    "description": "\ud83d\udfe2 Plein r\u00e9gime",
     "bot_allocations": {
-        "portfolio_mr_canary": 0.1613,
-        "portfolio_gb": 0.1613,
-        "portfolio_aggressive": 0.1613,
-        "portfolio_conservative": 0.0323,
-        "portfolio_mr": 0.1613,
-        "portfolio_lr": 0.1613,
-        "portfolio_v14": 0.1613
+        "portfolio_mr_canary": 0.1389,
+        "portfolio_gb": 0.1389,
+        "portfolio_aggressive": 0.1389,
+        "portfolio_conservative": 0.0278,
+        "portfolio_mr": 0.1389,
+        "portfolio_lr": 0.1389,
+        "portfolio_v15_fund": 0.1389,
+        "portfolio_v14": 0.1389
     },
     "historique_regime_brut": [
         {
@@ -26,6 +29,10 @@
         },
         {
             "date": "2026-04-21",
+            "regime": "BULL"
+        },
+        {
+            "date": "2026-04-22",
             "regime": "BULL"
         }
     ]
