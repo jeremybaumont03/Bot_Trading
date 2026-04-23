@@ -1,11 +1,11 @@
 {
-    "last_update": "2026-04-22 21:50:36",
+    "last_update": "2026-04-23 21:44:07",
     "last_update_by": "meta_controller_v5.0",
     "allow_buying": true,
     "panic_mode": false,
     "market_regime": "BULL",
     "regime_brut_today": "BULL",
-    "global_risk_multiplier": 0.72,
+    "global_risk_multiplier": 0.804,
     "target_risk_multiplier": 1.0,
     "sentiment_impact": "1.00x",
     "sentiment_confidence": "100%",
@@ -24,15 +24,15 @@
     },
     "historique_regime_brut": [
         {
-            "date": "2026-04-20",
-            "regime": "BULL"
-        },
-        {
             "date": "2026-04-21",
             "regime": "BULL"
         },
         {
             "date": "2026-04-22",
+            "regime": "BULL"
+        },
+        {
+            "date": "2026-04-23",
             "regime": "BULL"
         }
     ]
