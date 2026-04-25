@@ -1,6 +1,7 @@
 import json
 import glob
 import os
+import sys
 import time
 from datetime import datetime
 import yfinance as yf
@@ -9,8 +10,14 @@ from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
 # ── 1. CONFIGURATION & SAFETY CAPS ──
-API_KEY = os.environ.get("ALPACA_API_KEY", "PKZQKI6G443CHOOVE3QMYF34E5")
-SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY", "GB749NubdsFJAzVmGeQq3jbZuWp2on5YReMG2j9BaSSX")
+# Securely pulls keys from GitHub Secrets. NO HARDCODED KEYS HERE.
+API_KEY = os.environ.get("ALPACA_API_KEY")
+SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY")
+
+if not API_KEY or not SECRET_KEY:
+    print("🚨 FATAL ERROR: Missing Alpaca API Keys. Check your GitHub Secrets.")
+    sys.exit(1)
+
 LIVE_EXECUTION = True 
 
 MAX_ORDER_SIZE = 500.0   # USD max per trade
@@ -44,7 +51,7 @@ def set_execution_lock():
 
 def get_eurusd_rate():
     try:
-        eurusd = yf.download("EURUSD=X", period="1d", progress=False)["Close"].values[0]
+        eurusd = yf.download("EURUSD=X", period="1d", progress=False)["Close"].iloc[0]
         return float(eurusd)
     except: 
         return 1.08
@@ -92,8 +99,11 @@ def execute_trades():
         if factory_symbol not in targets_usd:
             print(f"🛑 LIQUIDATING: {symbol}")
             if LIVE_EXECUTION:
-                trading_client.close_position(symbol)
-                time.sleep(1)
+                try:
+                    trading_client.close_position(symbol)
+                    time.sleep(1)
+                except Exception as e:
+                    print(f"   ❌ FAILED to liquidate {symbol}: {e}")
             del current_holdings[symbol]
 
     # 2. PARTIAL REBALANCING
@@ -118,7 +128,6 @@ def execute_trades():
                 print(f"   ⏳ Verifying fill status for {alpaca_symbol}...")
                 time.sleep(2) # Give Alpaca a moment to process
                 
-                # We would fetch the specific order status here in a production setup
                 print(f"   ✅ ORDER SUBMITTED: {alpaca_symbol} (ID: {submitted_order.id})")
                 
             except Exception as e:
