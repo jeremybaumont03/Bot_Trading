@@ -2,8 +2,8 @@ name: 🤖 2. Bot Execution
 
 on:
   schedule:
-    - cron: '30 21 * * 1-5'
-  workflow_dispatch:
+    - cron: '30 21 * * 1-5' # Runs at 21:30 UTC, Monday through Friday
+  workflow_dispatch:        # Allows you to trigger it manually from the GitHub UI
 
 concurrency:
   group: usine-trading
@@ -18,12 +18,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: 'pip'
           
-      - name: Installation des dépendances
+      - name: 📦 Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
@@ -47,13 +48,13 @@ jobs:
           
           for bot in "${BOTS[@]}"; do
             if [ -f "$bot" ]; then
-              echo "⚡ Lancement de $bot..."
+              echo "⚡ Launching $bot..."
               if [ "$bot" == "entraineur_retail.py" ]; then
                 # V15 gets 15 minutes (900 seconds)
-                timeout 900 python "$bot" || echo "⚠️ Échec ou Timeout (900s) sur $bot."
+                timeout 900 python "$bot" || echo "⚠️ Failure or Timeout (900s) on $bot."
               else
                 # Others get 5 minutes (300 seconds)
-                timeout 300 python "$bot" || echo "⚠️ Échec ou Timeout (300s) sur $bot."
+                timeout 300 python "$bot" || echo "⚠️ Failure or Timeout (300s) on $bot."
               fi
             fi
           done
@@ -71,3 +72,16 @@ jobs:
             git commit -m "💼 Portfolios Updated - $(date '+%d/%m/%Y %H:%M')"
             git push
           fi
+
+      - name: 🏦 Execute Orders on Alpaca (Execution Engine)
+        env:
+          ALPACA_API_KEY: ${{ secrets.ALPACA_API_KEY }}
+          ALPACA_SECRET_KEY: ${{ secrets.ALPACA_SECRET_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: |
+          # Ensure the execution engine has the exact libraries it needs
+          pip install alpaca-py yfinance requests
+          
+          # Fire the execution engine
+          python broker_execution.py
