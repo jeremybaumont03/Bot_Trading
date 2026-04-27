@@ -1,13 +1,13 @@
 {
-    "date": "2026-04-24 21:46:15",
-    "sentiment_brut_jour": 0.172,
-    "sentiment_lisse": 0.148,
+    "date": "2026-04-27 21:52:45",
+    "sentiment_brut_jour": 0.121,
+    "sentiment_lisse": 0.127,
     "news_count": 50,
     "confidence_score": 1.0,
     "etat": "NEUTRE",
     "audit": {
-        "variance": 0.347,
+        "variance": 0.317,
         "alpha_used": 0.8,
-        "runtime_ms": 485
+        "runtime_ms": 570
     }
 }
