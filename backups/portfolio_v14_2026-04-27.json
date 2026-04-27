@@ -1,7 +1,20 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 763.3326544035097,
+  "capital_cash": 783.0672118719293,
   "positions": {
+    "HD": {
+      "quantite": 0.26946252753814715,
+      "prix_achat": 349.3999938964844,
+      "date_achat": "2026-04-17",
+      "mise": 94.29164294157222,
+      "tp_cible": 367.5971374511719,
+      "sl_cible": 335.75213623046875,
+      "proba": 0.7553611283283829,
+      "ev": 0.011810399786212351,
+      "atr_local": 9.09857177734375,
+      "regime_macro": "CHOP",
+      "poids_portefeuille": 0.09429164294157222
+    },
     "V": {
       "quantite": 0.2947298198248527,
       "prix_achat": 317.0199890136719,
@@ -27,19 +40,6 @@
       "atr_local": 25.770006452287948,
       "regime_macro": "NEUTRAL",
       "poids_portefeuille": 0.036505845648409974
-    },
-    "XLF": {
-      "quantite": 2.1034341177713145,
-      "prix_achat": 51.810001373291016,
-      "date_achat": "2026-04-27",
-      "mise": 109.14263848809111,
-      "tp_cible": 53.73678861345564,
-      "sl_cible": 50.65392902919224,
-      "proba": 0.7180168519387046,
-      "ev": 0.007954396693059283,
-      "atr_local": 0.7707148960658482,
-      "regime_macro": "BULL",
-      "poids_portefeuille": 0.16228695430058893
     }
   },
   "historique": [
@@ -151,20 +151,6 @@
       "regime_entree": "CHOP",
       "proba_entree": 0.6094524727985408,
       "ev_entree": 0.007210974762378836
-    },
-    {
-      "date_entree": "2026-04-17",
-      "date_sortie": "2026-04-27",
-      "ticker": "HD",
-      "action": "VENTE",
-      "raison": "STOP LOSS",
-      "pnl": -4.88,
-      "mise": 94.29164294157222,
-      "pnl_pct": -0.0489,
-      "jours_detention": 10,
-      "regime_entree": "CHOP",
-      "proba_entree": 0.7553611283283829,
-      "ev_entree": 0.011810399786212351
     }
   ],
   "valeur_historique": [
@@ -255,10 +241,6 @@
     {
       "date": "2026-04-24",
       "valeur": 991.1
-    },
-    {
-      "date": "2026-04-27",
-      "valeur": 990.21
     }
   ]
 }
