@@ -33,7 +33,6 @@ jobs:
           python regime_kmeans.py || true
           python regime_hmm.py || true
           python labo_sentiment.py || true
-          python pairs_bot.py || true
           
       - name: 🧠 Run Meta-Controller (Boss)
         env:
