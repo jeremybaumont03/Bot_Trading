@@ -59,17 +59,17 @@ jobs:
             fi
           done
 
-      - name: 💾 Save Portfolios (Safe Git)
+      - name: 💾 Save Portfolios & Logs (Safe Git)
         run: |
           git config --global user.name "Hedge Fund Execution"
           git config --global user.email "execution@trading.local"
           git pull --rebase --autostash origin main || true
           
-          # Only save portfolios and backups
-          git add portfolio*.json backups/ || true
+          # ✅ THE FIX: Added *_log.json to capture pairs_log.json
+          git add portfolio*.json *_log.json backups/ || true
           
           if ! git diff --staged --quiet; then
-            git commit -m "💼 Portfolios Updated - $(date '+%d/%m/%Y %H:%M')"
+            git commit -m "💼 Portfolios & Logs Updated - $(date '+%d/%m/%Y %H:%M')"
             git push
           fi
 
