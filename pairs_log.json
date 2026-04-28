@@ -624,5 +624,23 @@
         "price_B": 154.69,
         "z_score": -2.03,
         "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-04-28 22:30:28",
+        "asset_A": "NVDA",
+        "asset_B": "SPY",
+        "price_A": 213.17,
+        "price_B": 711.69,
+        "z_score": 2.61,
+        "action": "SHORT THE SPREAD"
+    },
+    {
+        "date": "2026-04-28 22:30:28",
+        "asset_A": "NVDA",
+        "asset_B": "BAC",
+        "price_A": 213.17,
+        "price_B": 52.66,
+        "z_score": 2.02,
+        "action": "SHORT THE SPREAD"
     }
 ]
