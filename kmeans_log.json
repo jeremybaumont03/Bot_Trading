@@ -78,5 +78,10 @@
         "date": "2026-04-27 21:52:43",
         "model": "K-Means",
         "regime": "BULL/NORMAL MARKET (S\u00fbr)"
+    },
+    {
+        "date": "2026-04-28 21:56:49",
+        "model": "K-Means",
+        "regime": "BEAR MARKET (Danger)"
     }
 ]
