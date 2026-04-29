@@ -1,11 +1,11 @@
 {
-    "last_update": "2026-04-28 21:56:53",
+    "last_update": "2026-04-29 21:58:33",
     "last_update_by": "meta_controller_v5.0",
     "allow_buying": true,
     "panic_mode": false,
     "market_regime": "BULL",
     "regime_brut_today": "BULL",
-    "global_risk_multiplier": 0.933,
+    "global_risk_multiplier": 0.953,
     "target_risk_multiplier": 1.0,
     "sentiment_impact": "1.00x",
     "sentiment_confidence": "100%",
@@ -13,26 +13,26 @@
     "atr_sl_multiplier": 1.5,
     "description": "\ud83d\udfe2 Plein r\u00e9gime",
     "bot_allocations": {
-        "portfolio_mr_canary": 0.1389,
-        "portfolio_gb": 0.1389,
-        "portfolio_aggressive": 0.1389,
-        "portfolio_conservative": 0.0278,
-        "portfolio_mr": 0.1389,
-        "portfolio_lr": 0.1389,
-        "portfolio_v15_fund": 0.1389,
-        "portfolio_v14": 0.1389
+        "portfolio_mr_canary": 0.125,
+        "portfolio_gb": 0.125,
+        "portfolio_aggressive": 0.125,
+        "portfolio_conservative": 0.125,
+        "portfolio_mr": 0.125,
+        "portfolio_lr": 0.125,
+        "portfolio_v15_fund": 0.125,
+        "portfolio_v14": 0.125
     },
     "historique_regime_brut": [
-        {
-            "date": "2026-04-24",
-            "regime": "BULL"
-        },
         {
             "date": "2026-04-27",
             "regime": "BULL"
         },
         {
             "date": "2026-04-28",
+            "regime": "BULL"
+        },
+        {
+            "date": "2026-04-29",
             "regime": "BULL"
         }
     ]
