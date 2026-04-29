@@ -1,6 +1,6 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 986.1777724760958,
+  "capital_cash": 1010.2469049874211,
   "positions": {
     "JNJ": {
       "quantite": 0.086308,
@@ -11,17 +11,6 @@
       "sl_cible": 223.5446,
       "atr_lors_achat": 4.7636,
       "atr_tp_mult": 2.0,
-      "atr_sl_mult": 1.5
-    },
-    "GLD": {
-      "quantite": 0.057577,
-      "prix_achat": 417.41,
-      "date_achat": "2026-04-29",
-      "mise": 24.07,
-      "tp_cible": 435.4635,
-      "sl_cible": 406.5779,
-      "atr_lors_achat": 7.2214,
-      "atr_tp_mult": 2.5,
       "atr_sl_mult": 1.5
     }
   },
@@ -86,18 +75,6 @@
       "tp_cible": 240.2172,
       "sl_cible": 223.5446,
       "atr": 4.7636
-    },
-    {
-      "date": "2026-04-29",
-      "ticker": "GLD",
-      "action": "ACHAT",
-      "prix": 417.41,
-      "quantite": 0.057577,
-      "mise": 24.07,
-      "frais": 0.04,
-      "tp_cible": 435.4635,
-      "sl_cible": 406.5779,
-      "atr": 7.2214
     }
   ],
   "valeur_historique": [
@@ -179,10 +156,6 @@
     },
     {
       "date": "2026-04-28",
-      "valeur": 1030.19
-    },
-    {
-      "date": "2026-04-29",
       "valeur": 1030.19
     }
   ],
