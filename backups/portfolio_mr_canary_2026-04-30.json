@@ -1,7 +1,18 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 970.1138905949563,
+  "capital_cash": 971.4992117573813,
   "positions": {
+    "BAC": {
+      "quantite": 0.317701,
+      "prix_achat": 52.47,
+      "date_achat": "2026-04-23",
+      "mise": 16.69,
+      "tp_cible": 55.394,
+      "sl_cible": 50.7156,
+      "atr_lors_achat": 1.1696,
+      "atr_tp_mult": 2.5,
+      "atr_sl_mult": 1.5
+    },
     "DIS": {
       "quantite": 0.185544,
       "prix_achat": 102.35,
@@ -13,25 +24,14 @@
       "atr_tp_mult": 2.5,
       "atr_sl_mult": 1.5
     },
-    "TSLA": {
-      "quantite": 0.046917,
-      "prix_achat": 381.63,
-      "date_achat": "2026-04-30",
-      "mise": 17.93,
-      "tp_cible": 417.9317,
-      "sl_cible": 359.849,
-      "atr_lors_achat": 14.5207,
-      "atr_tp_mult": 2.5,
-      "atr_sl_mult": 1.5
-    },
-    "TLT": {
-      "quantite": 0.208915,
-      "prix_achat": 85.62,
-      "date_achat": "2026-04-30",
-      "mise": 17.91,
-      "tp_cible": 87.1495,
-      "sl_cible": 84.7023,
-      "atr_lors_achat": 0.6118,
+    "META": {
+      "quantite": 0.028645,
+      "prix_achat": 671.34,
+      "date_achat": "2026-04-28",
+      "mise": 19.26,
+      "tp_cible": 713.4837,
+      "sl_cible": 646.0538,
+      "atr_lors_achat": 16.8575,
       "atr_tp_mult": 2.5,
       "atr_sl_mult": 1.5
     }
@@ -276,60 +276,6 @@
       "tp_cible": 713.4837,
       "sl_cible": 646.0538,
       "atr": 16.8575
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "META",
-      "action": "VENTE",
-      "raison": "STOP LOSS",
-      "prix": 611.91,
-      "quantite": 0.028645,
-      "mise": 19.26,
-      "valeur": 17.5,
-      "pnl": -1.76,
-      "pnl_pct": -8.85,
-      "frais": 0.03,
-      "duree_jours": 2,
-      "atr_lors_achat": 16.8575
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "TSLA",
-      "action": "ACHAT",
-      "prix": 381.63,
-      "quantite": 0.046917,
-      "mise": 17.93,
-      "frais": 0.03,
-      "tp_cible": 417.9317,
-      "sl_cible": 359.849,
-      "atr": 14.5207
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "BAC",
-      "action": "VENTE",
-      "raison": "TIME STOP",
-      "prix": 53.46,
-      "quantite": 0.317701,
-      "mise": 16.69,
-      "valeur": 16.96,
-      "pnl": 0.27,
-      "pnl_pct": 1.89,
-      "frais": 0.03,
-      "duree_jours": 7,
-      "atr_lors_achat": 1.1696
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "TLT",
-      "action": "ACHAT",
-      "prix": 85.62,
-      "quantite": 0.208915,
-      "mise": 17.91,
-      "frais": 0.03,
-      "tp_cible": 87.1495,
-      "sl_cible": 84.7023,
-      "atr": 0.6118
     }
   ],
   "valeur_historique": [
@@ -392,10 +338,6 @@
     {
       "date": "2026-04-29",
       "valeur": 1026.47
-    },
-    {
-      "date": "2026-04-30",
-      "valeur": 1024.97
     }
   ],
   "logs_journaliers": [
@@ -3547,216 +3489,6 @@
       "ticker": "XLF",
       "rsi": 29.24,
       "distance_ma20": 1.0101,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "AAPL",
-      "rsi": 64.47,
-      "distance_ma20": 1.0234,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "MSFT",
-      "rsi": 36.55,
-      "distance_ma20": 1.0105,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "NVDA",
-      "rsi": 49.61,
-      "distance_ma20": 1.0173,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "GOOGL",
-      "rsi": 98.18,
-      "distance_ma20": 1.1572,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "AMZN",
-      "rsi": 81.19,
-      "distance_ma20": 1.0844,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "META",
-      "rsi": 23.55,
-      "distance_ma20": 0.9482,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "TSLA",
-      "rsi": 43.06,
-      "distance_ma20": 1.0284,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "NFLX",
-      "rsi": 60.16,
-      "distance_ma20": 0.956,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "AMD",
-      "rsi": 79.36,
-      "distance_ma20": 1.2763,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "INTC",
-      "rsi": 94.54,
-      "distance_ma20": 1.3759,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "TSM",
-      "rsi": 72.27,
-      "distance_ma20": 1.0589,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "QCOM",
-      "rsi": 95.12,
-      "distance_ma20": 1.3034,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "JPM",
-      "rsi": 50.79,
-      "distance_ma20": 1.0147,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "V",
-      "rsi": 78.06,
-      "distance_ma20": 1.0582,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "BAC",
-      "rsi": 49.65,
-      "distance_ma20": 1.0164,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "GS",
-      "rsi": 48.21,
-      "distance_ma20": 1.0156,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "WMT",
-      "rsi": 60.39,
-      "distance_ma20": 1.0349,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "JNJ",
-      "rsi": 62.05,
-      "distance_ma20": 0.9822,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "PG",
-      "rsi": 75.92,
-      "distance_ma20": 1.0201,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "HD",
-      "rsi": 23.4,
-      "distance_ma20": 0.9796,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "DIS",
-      "rsi": 45.85,
-      "distance_ma20": 1.02,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "BTC-USD",
-      "rsi": 32.88,
-      "distance_ma20": 1.0067,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "ETH-USD",
-      "rsi": 31.34,
-      "distance_ma20": 0.9745,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "SPY",
-      "rsi": 76.72,
-      "distance_ma20": 1.0337,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "QQQ",
-      "rsi": 76.51,
-      "distance_ma20": 1.0537,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "IWM",
-      "rsi": 61.16,
-      "distance_ma20": 1.0351,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "TLT",
-      "rsi": 23.46,
-      "distance_ma20": 0.9887,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "GLD",
-      "rsi": 41.36,
-      "distance_ma20": 0.9774,
-      "signal_valide": true
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "XLK",
-      "rsi": 66.31,
-      "distance_ma20": 1.0608,
-      "signal_valide": false
-    },
-    {
-      "date": "2026-04-30",
-      "ticker": "XLF",
-      "rsi": 44.65,
-      "distance_ma20": 1.0115,
       "signal_valide": true
     }
   ]
