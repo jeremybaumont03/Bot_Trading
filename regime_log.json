@@ -112,5 +112,11 @@
         "model": "HMM",
         "regime": "BULL/NORMAL MARKET (S\u00fbr)",
         "confidence": 0.9994
+    },
+    {
+        "date": "2026-05-01 21:52:42",
+        "model": "HMM",
+        "regime": "BULL/NORMAL MARKET (S\u00fbr)",
+        "confidence": 0.9996
     }
 ]
