@@ -647,5 +647,32 @@
         "date": "2026-04-29 22:29:42",
         "status": "NO_SIGNAL",
         "message": "Aucun \u00e9lastique n'est tendu au-del\u00e0 de 2.0 aujourd'hui."
+    },
+    {
+        "date": "2026-05-01 22:10:37",
+        "asset_A": "NVDA",
+        "asset_B": "QQQ",
+        "price_A": 198.45,
+        "price_B": 674.15,
+        "z_score": -3.3,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-05-01 22:10:37",
+        "asset_A": "NVDA",
+        "asset_B": "XLK",
+        "price_A": 198.45,
+        "price_B": 161.87,
+        "z_score": -2.72,
+        "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-05-01 22:10:37",
+        "asset_A": "NVDA",
+        "asset_B": "SPY",
+        "price_A": 198.45,
+        "price_B": 720.65,
+        "z_score": -2.58,
+        "action": "LONG THE SPREAD"
     }
 ]
