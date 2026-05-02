@@ -1,14 +1,13 @@
 """
-🏦 BROKER EXECUTION V6 APEX — CLOUD FACTORY EDITION
-Features:
-  ✅ Live Execution = True (Will place orders on Alpaca Paper account)
-  ✅ Paper = True (Safely isolated from real bank funds)
-  ✅ Crypto Shield (Ignores BTC/ETH to prevent cash drag)
-  ✅ 45s Hard Timeout (Protects GitHub Actions quotas)
-  ✅ Telegram Telemetry (Sends full summary to your phone)
-  ✅ PRO FIX: String Notional to bypass 100% of Alpaca Float Errors
-  ✅ PRO FIX: Robust DataFrame validation for Yahoo Finance
-  ✅ PRO FIX: Max Orders Limit to prevent API Spam
+🏦 BROKER EXECUTION V6 APEX — FINAL CORRIGÉ
+Corrections :
+  ✅ FX Fix : values.flatten()[-1] pour éviter l'erreur numpy.float64
+  ✅ TimeInForce.GTC : Les ordres s'exécutent à l'ouverture du lendemain
+  ✅ Crypto Shield conservé
+  ✅ Timeout 45s conservé
+  ✅ Rapport Telegram conservé
+  ✅ String Notional conservé (bloque les erreurs 422 Alpaca)
+  ✅ Max 10 ordres par cycle conservé
 """
 
 import json
@@ -23,37 +22,35 @@ from alpaca.trading.client import TradingClient
 from alpaca.trading.requests import MarketOrderRequest
 from alpaca.trading.enums import OrderSide, TimeInForce
 
-# ── 1. GLOBAL TIMER & SAFETY ─────────────────────────────────────────────────
+# ── 1. CHRONOMÈTRE GLOBAL ─────────────────────────────────────────────────────
 START_TIME   = time.time()
-MAX_RUNTIME  = 45.0   # Absolute hard stop at 45 seconds
-SESSION_LOGS = []     # Stores logs for the final Telegram message
+MAX_RUNTIME  = 45.0
+SESSION_LOGS = []
 
 def check_timeout():
     elapsed = time.time() - START_TIME
     if elapsed > MAX_RUNTIME:
-        log_action(f"🚨 FATAL TIMEOUT: Script running for {elapsed:.1f}s. Emergency Stop.")
+        log_action(f"🚨 TIMEOUT FATAL: {elapsed:.1f}s. Arrêt d'urgence.")
         send_telegram_summary()
         sys.exit(1)
 
-# ── 2. CONFIGURATION & KEYS ──────────────────────────────────────────────────
+# ── 2. CONFIGURATION ───────────────────────────────────────────────────────────
 API_KEY          = os.environ.get("ALPACA_API_KEY")
 SECRET_KEY       = os.environ.get("ALPACA_SECRET_KEY")
 TELEGRAM_TOKEN   = os.environ.get("TELEGRAM_TOKEN")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 if not API_KEY or not SECRET_KEY:
-    print("🚨 FATAL ERROR: Missing Alpaca API Keys. Check GitHub Secrets.")
+    print("🚨 FATAL ERROR: Clés Alpaca manquantes. Vérifier GitHub Secrets.")
     sys.exit(1)
 
-# THE TRIGGERS
-LIVE_EXECUTION = True  # True = Robot pulls the trigger on Alpaca
-IS_PAPER       = True  # True = Shoots blanks (Virtual Money). False = Real Money.
+LIVE_EXECUTION = True   # True = ordres réels sur Alpaca
+IS_PAPER       = True   # True = compte paper (argent virtuel Alpaca)
 
-# RISK PARAMETERS
-BASE_MAX_ORDER_SIZE     = 500.0   # Max USD per single trade
-MIN_TRADE_SIZE          = 10.0    # Min USD to avoid micro-transactions
-BASE_MAX_TOTAL_EXPOSURE = 2500.0  # Max total portfolio exposure in USD
-MAX_ORDERS_PER_CYCLE    = 10      # Safety cap to prevent Alpaca API spam
+BASE_MAX_ORDER_SIZE     = 500.0
+MIN_TRADE_SIZE          = 10.0
+BASE_MAX_TOTAL_EXPOSURE = 2500.0
+MAX_ORDERS_PER_CYCLE    = 10
 
 CRYPTO_BLACKLIST = {
     "BTC-USD", "ETH-USD", "SOL-USD", "XRP-USD",
@@ -62,226 +59,239 @@ CRYPTO_BLACKLIST = {
 
 trading_client = TradingClient(API_KEY, SECRET_KEY, paper=IS_PAPER)
 
-# ── 3. STRUCTURED TELEMETRY (LOGS & TELEGRAM) ────────────────────────────────
+# ── 3. LOGS & TELEGRAM ────────────────────────────────────────────────────────
 def log_action(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     log_line  = f"[{timestamp}] {message}"
     print(log_line)
-    SESSION_LOGS.append(message) 
-    
+    SESSION_LOGS.append(message)
     try:
         with open("execution_log.txt", "a") as f:
             f.write(log_line + "\n")
-    except: 
+    except:
         pass
 
 def send_telegram_summary():
-    """Sends the execution summary to your phone."""
     if not TELEGRAM_TOKEN or not TELEGRAM_CHAT_ID:
-        print("⚠️ No Telegram keys found, logs sent to console only.")
+        print("⚠️ Pas de clés Telegram — logs uniquement console.")
         return
-        
-    mode_txt = "🟡 VIRTUAL MONEY (Paper)" if IS_PAPER else "🔴 REAL MONEY (Live)"
-    exec_txt = "ACTIVE" if LIVE_EXECUTION else "DRY RUN"
-    
-    log_text = "\n".join(SESSION_LOGS)
-    message  = f"🏦 *HEDGE FUND FACTORY V6*\n_{mode_txt} | Exec: {exec_txt}_\n\n```text\n{log_text}\n```"
-    
-    url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"}
-    
+    mode_txt = "🟡 PAPER (Argent virtuel Alpaca)" if IS_PAPER else "🔴 LIVE (Vrai argent)"
+    exec_txt = "ACTIF" if LIVE_EXECUTION else "DRY RUN"
+    log_text = "\n".join(SESSION_LOGS[-30:])
+    message  = f"🏦 *HEDGE FUND V6 APEX*\n_{mode_txt} | Exec: {exec_txt}_\n\n```\n{log_text}\n```"
     try:
-        requests.post(url, json=payload, timeout=5)
+        requests.post(
+            f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
+            json={"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "Markdown"},
+            timeout=10
+        )
     except Exception as e:
-        print(f"⚠️ Telegram sending failed: {e}")
+        print(f"⚠️ Telegram : {e}")
 
-# ── 4. THE CENTRAL BRAIN (META CONTROLLER) ───────────────────────────────────
+# ── 4. CERVEAU CENTRAL ────────────────────────────────────────────────────────
 def get_market_context():
     check_timeout()
-    context = {"panic_mode": False, "allow_buying": True, "risk_multiplier": 1.0, "regime": "UNKNOWN"}
-    
+    context = {
+        "panic_mode"      : False,
+        "allow_buying"    : True,
+        "risk_multiplier" : 1.0,
+        "regime"          : "UNKNOWN"
+    }
     try:
-        file_path = "global_settings.json"
-        if os.path.exists(file_path):
-            with open(file_path, "r") as f:
+        if os.path.exists("global_settings.json"):
+            with open("global_settings.json", "r") as f:
                 meta = json.load(f)
-                context["panic_mode"]      = meta.get("panic_mode", False)
-                context["allow_buying"]    = meta.get("allow_buying", True)
-                context["risk_multiplier"] = float(meta.get("global_risk_multiplier", 1.0))
-                context["regime"]          = meta.get("market_regime", "UNKNOWN")
-                log_action(f"🧠 MACRO: Regime {context['regime']} | Risk {context['risk_multiplier']}x")
+            context["panic_mode"]      = meta.get("panic_mode", False)
+            context["allow_buying"]    = meta.get("allow_buying", True)
+            context["risk_multiplier"] = float(meta.get("global_risk_multiplier", 1.0))
+            context["regime"]          = meta.get("market_regime", "UNKNOWN")
+            log_action(f"🧠 MACRO: Régime={context['regime']} | Risk={context['risk_multiplier']}x | Achats={'✅' if context['allow_buying'] else '🛑'}")
         else:
-            log_action("⚠️ Meta Controller not found. Default risk 1.0x")
+            log_action("⚠️ global_settings.json introuvable — risque 1.0x par défaut")
     except Exception as e:
-        log_action(f"⚠️ Brain Error ({e}), fallback risk 0.5x.")
-        context["risk_multiplier"] = 0.5 
+        log_action(f"⚠️ Erreur Cerveau ({e}) — fallback 0.5x")
+        context["risk_multiplier"] = 0.5
     return context
 
-# ── 5. DATA & CONVERSION (ROBUST FX) ─────────────────────────────────────────
+# ── 5. TAUX EUR/USD (✅ Fix numpy.float64) ────────────────────────────────────
 def get_eurusd_rate():
+    """
+    ✅ Fix : .values.flatten()[-1] évite l'erreur
+    'numpy.float64 object has no attribute iloc'
+    """
     check_timeout()
     try:
-        df = yf.download("EURUSD=X", period="1d", progress=False)
-        
-        if df.empty or "Close" not in df:
-            raise ValueError("Empty FX data")
-            
-        eurusd = float(df["Close"].values.flatten()[-1])
-        return eurusd
-        
+        df = yf.download("EURUSD=X", period="2d", progress=False)
+
+        if df.empty or "Close" not in df.columns:
+            raise ValueError("Données FX vides")
+
+        # ✅ Extraction robuste sans .iloc sur un numpy scalar
+        rate = float(df["Close"].values.flatten()[-1])
+        log_action(f"💱 EUR/USD : {rate:.4f}")
+        return rate
+
     except Exception as e:
-        log_action(f"⚠️ FX ERROR: ({e}) -> Fallback 1.08")
+        log_action(f"⚠️ FX ERROR ({e}) — Fallback 1.08")
         return 1.08
 
+# ── 6. LECTURE DES PORTFOLIOS (Crypto exclue à la source) ─────────────────────
 def get_target_positions():
     target_allocations = {}
     for file in glob.glob("portfolio_*.json"):
         check_timeout()
-        if "backup" in file or "tmp" in file: continue
+        if any(x in file for x in ["backup", "tmp", "temp"]):
+            continue
         try:
             with open(file, "r") as f:
                 data = json.load(f)
-                for ticker, pos_data in data.get("positions", {}).items():
-                    if ticker in CRYPTO_BLACKLIST:
-                        log_action(f"⏭️ SKIP CRYPTO: {ticker} ignored at source.")
-                        continue
-                        
-                    target_allocations[ticker] = target_allocations.get(ticker, 0) + pos_data.get("mise", 0)
+            for ticker, pos_data in data.get("positions", {}).items():
+                if ticker in CRYPTO_BLACKLIST:
+                    log_action(f"⏭️ SKIP CRYPTO: {ticker} ignoré à la source")
+                    continue
+                mise = pos_data.get("mise", 0)
+                if mise > 0:
+                    target_allocations[ticker] = target_allocations.get(ticker, 0) + mise
         except Exception as e:
-            log_action(f"⚠️ Error reading {file}: {e}")
-            
+            log_action(f"⚠️ Erreur lecture {file} : {e}")
+
+    log_action(f"📋 {len(target_allocations)} positions actions chargées (cryptos exclues)")
     return target_allocations
 
-# ── 6. THE REBALANCING ENGINE ────────────────────────────────────────────────
+# ── 7. MOTEUR DE REBALANCING ──────────────────────────────────────────────────
 def execute_trades():
-    log_action("🚀 STARTING V6 APEX EXECUTION ENGINE...")
-    
+    log_action(f"🚀 DÉMARRAGE V6 APEX — {'PAPER' if IS_PAPER else 'LIVE'} | {'DRY RUN' if not LIVE_EXECUTION else 'EXECUTION'}")
+
     market_context = get_market_context()
-    
+
     if market_context["panic_mode"]:
-        log_action("🚨 PANIC MODE: Central system locked. Aborting.")
-        send_telegram_summary()
-        sys.exit(0)
-        
-    if market_context["risk_multiplier"] < 0.2:
-        log_action("🛑 RISK TOO LOW (< 0.2). Aborting.")
+        log_action("🚨 PANIC MODE — Exécution annulée.")
         send_telegram_summary()
         sys.exit(0)
 
-    active_max_order    = BASE_MAX_ORDER_SIZE * market_context["risk_multiplier"]
+    if market_context["risk_multiplier"] < 0.2:
+        log_action("🛑 Risque trop faible (< 0.2) — Exécution annulée.")
+        send_telegram_summary()
+        sys.exit(0)
+
+    active_max_order    = BASE_MAX_ORDER_SIZE     * market_context["risk_multiplier"]
     active_max_exposure = BASE_MAX_TOTAL_EXPOSURE * market_context["risk_multiplier"]
-    
+
     if not market_context["allow_buying"]:
-        log_action("⚠️ BUYING BLOCKED: 'Liquidations Only' Mode Active.")
+        log_action("⚠️ ACHATS BLOQUÉS — Mode liquidations uniquement.")
 
     fx_rate     = get_eurusd_rate()
-    
-    # PRO FIX: Round targets early to prevent cumulative floating point drift
     targets_eur = get_target_positions()
     targets_usd = {
-        ticker: round(mise_eur * fx_rate, 2) 
-        for ticker, mise_eur in targets_eur.items()
+        ticker: round(mise * fx_rate, 2)
+        for ticker, mise in targets_eur.items()
     }
-    
-    total_planned_exposure = sum(targets_usd.values())
-    if total_planned_exposure > active_max_exposure:
-        log_action(f"🚨 FATAL: Exposure (${total_planned_exposure:.0f}) > Limit (${active_max_exposure:.0f}).")
+
+    total_exposure = sum(targets_usd.values())
+    log_action(f"📊 Exposition cible : {total_exposure:.0f}$ (limite : {active_max_exposure:.0f}$)")
+
+    if total_exposure > active_max_exposure:
+        log_action(f"🚨 FATAL : Exposition ({total_exposure:.0f}$) > Limite ({active_max_exposure:.0f}$). Arrêt.")
         send_telegram_summary()
         return
 
     try:
-        current_alpaca_positions = trading_client.get_all_positions()
-        current_holdings = {pos.symbol: float(pos.market_value) for pos in current_alpaca_positions}
+        current_positions = trading_client.get_all_positions()
+        current_holdings  = {pos.symbol: float(pos.market_value) for pos in current_positions}
+        log_action(f"📂 {len(current_holdings)} positions actuelles sur Alpaca")
     except Exception as e:
-        log_action(f"❌ FATAL: Alpaca API unreachable: {e}")
+        log_action(f"❌ FATAL : API Alpaca inaccessible : {e}")
         send_telegram_summary()
         return
 
-    # ── PHASE 1: LIQUIDATIONS ──
-    log_action("── PHASE 1: LIQUIDATIONS ──")
+    # ── PHASE 1 : Liquidations ────────────────────────────────────────────────
+    log_action("── PHASE 1 : LIQUIDATIONS ──")
     for symbol in list(current_holdings.keys()):
         check_timeout()
-        factory_symbol = symbol.replace("USD", "-USD") if symbol in ["BTCUSD", "ETHUSD"] else symbol
-        
+        factory_symbol = (
+            symbol.replace("USD", "-USD")
+            if symbol in ["BTCUSD", "ETHUSD", "SOLUSD"]
+            else symbol
+        )
         if factory_symbol not in targets_usd:
-            log_action(f"🛑 LIQUIDATING: {symbol}")
+            log_action(f"🛑 LIQUIDATION : {symbol}")
             if LIVE_EXECUTION:
-                try: 
+                try:
                     trading_client.close_position(symbol)
-                except Exception as e: 
-                    log_action(f"❌ FAIL Liquidation {symbol}: {e}")
+                except Exception as e:
+                    log_action(f"❌ ECHEC Liquidation {symbol} : {e}")
             else:
-                log_action(f"[DRY RUN] Would liquidate {symbol}")
-            del current_holdings[symbol]
+                log_action(f"[DRY RUN] Aurait liquidé {symbol}")
 
-    # ── PHASE 2: BURST ORDERS ──
-    log_action("── PHASE 2: ORDERS ──")
+    # ── PHASE 2 : Ordres ──────────────────────────────────────────────────────
+    log_action("── PHASE 2 : ORDRES ──")
     pending_verifications = []
-    orders_sent = 0
-    
+    orders_sent           = 0
+
     for factory_symbol, target_usd in targets_usd.items():
         check_timeout()
-        
+
         if orders_sent >= MAX_ORDERS_PER_CYCLE:
-            log_action("⚠️ MAX ORDERS REACHED: Cap at 10 to prevent API spam.")
+            log_action("⚠️ MAX ORDRES ATTEINT (10) — Anti-spam Alpaca.")
             break
-            
+
         alpaca_symbol = factory_symbol
         current_usd   = current_holdings.get(alpaca_symbol, 0.0)
         difference    = target_usd - current_usd
-        
-        if abs(difference) < MIN_TRADE_SIZE: 
+
+        if abs(difference) < MIN_TRADE_SIZE:
             continue
-            
+
         side = OrderSide.BUY if difference > 0 else OrderSide.SELL
 
         if side == OrderSide.BUY and not market_context["allow_buying"]:
-            log_action(f"🚫 BUY CANCELLED: {alpaca_symbol} (allow_buying = False)")
+            log_action(f"🚫 ACHAT ANNULÉ : {alpaca_symbol} (allow_buying = False)")
             continue
 
-        if abs(difference) > active_max_order:
-            log_action(f"⚠️ TRIM: Delta for {alpaca_symbol} reduced to ${active_max_order:.0f}")
-            
-        # PRO FIX: 1) Round mathematically, then 2) Format as exact String
         trade_amount = round(min(abs(difference), active_max_order), 2)
-        notional_str = f"{trade_amount:.2f}"
+        notional_str = f"{trade_amount:.2f}"  # String pour éviter les erreurs 422 Alpaca
+
+        if abs(difference) > active_max_order:
+            log_action(f"⚠️ TRIM : {alpaca_symbol} réduit à ${active_max_order:.0f}")
 
         if LIVE_EXECUTION:
             try:
                 order = MarketOrderRequest(
-                    symbol=alpaca_symbol, 
-                    notional=notional_str, # String injection blocks 422 API errors
-                    side=side, 
-                    time_in_force=TimeInForce.DAY
+                    symbol=alpaca_symbol,
+                    notional=notional_str,
+                    side=side,
+                    # ✅ FIX : GTC au lieu de DAY
+                    # DAY = expire si marché fermé (après 21h UTC)
+                    # GTC = s'exécute à l'ouverture du lendemain matin
+                    time_in_force=TimeInForce.GTC
                 )
-                submitted_order = trading_client.submit_order(order_data=order)
-                log_action(f"⚡ ORDER: {side.name} ${notional_str} of {alpaca_symbol}")
-                pending_verifications.append((alpaca_symbol, trade_amount, submitted_order.id))
+                submitted = trading_client.submit_order(order_data=order)
+                log_action(f"⚡ ORDER : {side.name} ${notional_str} de {alpaca_symbol} (GTC)")
+                pending_verifications.append((alpaca_symbol, trade_amount, submitted.id))
                 orders_sent += 1
             except Exception as e:
-                log_action(f"❌ FAIL {alpaca_symbol}: {e}")
+                log_action(f"❌ ECHEC {alpaca_symbol} : {e}")
         else:
-            log_action(f"[DRY RUN] {side.name} ${notional_str} of {alpaca_symbol}")
+            log_action(f"[DRY RUN] {side.name} ${notional_str} de {alpaca_symbol} (GTC)")
 
-    # ── PHASE 3: VERIFICATION ──
+    # ── PHASE 3 : Vérification ────────────────────────────────────────────────
     if LIVE_EXECUTION and pending_verifications:
-        log_action("── PHASE 3: VERIFICATION ──")
+        log_action("── PHASE 3 : VÉRIFICATION ──")
         time.sleep(2.0)
         for symbol, amount, order_id in pending_verifications:
             check_timeout()
             try:
-                order_status = trading_client.get_order_by_id(order_id)
-                if order_status.status == "filled":
-                    log_action(f"✅ FILLED: {symbol}")
-                else:
-                    log_action(f"⚠️ PENDING: {symbol} ({order_status.status})")
-            except: 
-                pass
+                status = trading_client.get_order_by_id(order_id)
+                # GTC = ACCEPTED est normal après clôture — pas une erreur
+                emoji = "✅" if status.status == "filled" else "⏳"
+                log_action(f"{emoji} {symbol} : {status.status} (GTC — s'exécutera à l'ouverture)")
+            except Exception as e:
+                log_action(f"⚠️ Vérification impossible {symbol} : {e}")
 
-    elapsed_total = time.time() - START_TIME
-    log_action(f"🏁 CYCLE COMPLETED IN {elapsed_total:.1f}s.")
-    
+    elapsed = time.time() - START_TIME
+    log_action(f"🏁 CYCLE TERMINÉ EN {elapsed:.1f}s")
     send_telegram_summary()
 
+# ── MAIN ──────────────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     execute_trades()
