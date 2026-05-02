@@ -126,7 +126,7 @@ def get_eurusd_rate():
         if df.empty or "Close" not in df:
             raise ValueError("Empty FX data")
             
-        eurusd = float(df["Close"].squeeze().iloc[-1])
+        eurusd = float(df["Close"].values.flatten()[-1])
         return eurusd
         
     except Exception as e:
