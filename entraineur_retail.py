@@ -37,7 +37,7 @@ TICKERS = [
 
 CAPITAL_DEPART  = 1000.0
 MAX_POSITIONS   = 3
-MIN_PROBA_BASE  = 0.55  # Seuil de base, sera ajusté par les sentiments
+MIN_PROBA_BASE  = 0.52  # Seuil de base, sera ajusté par les sentiments
 FRAIS           = 0.001
 SLIPPAGE        = 0.0005
 
