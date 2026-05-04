@@ -674,5 +674,14 @@
         "price_B": 720.65,
         "z_score": -2.58,
         "action": "LONG THE SPREAD"
+    },
+    {
+        "date": "2026-05-04 22:31:51",
+        "asset_A": "NVDA",
+        "asset_B": "QQQ",
+        "price_A": 198.48,
+        "price_B": 672.88,
+        "z_score": -2.05,
+        "action": "LONG THE SPREAD"
     }
 ]

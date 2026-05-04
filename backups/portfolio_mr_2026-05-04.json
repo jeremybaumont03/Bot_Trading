@@ -1,6 +1,6 @@
 {
   "capital_depart": 1000.0,
-  "capital_cash": 981.238656063285,
+  "capital_cash": 1005.9859094353958,
   "positions": {
     "GLD": {
       "quantite": 0.057577,
@@ -10,17 +10,6 @@
       "tp_cible": 435.4635,
       "sl_cible": 406.5779,
       "atr_lors_achat": 7.2214,
-      "atr_tp_mult": 2.5,
-      "atr_sl_mult": 1.5
-    },
-    "META": {
-      "quantite": 0.040481,
-      "prix_achat": 610.41,
-      "date_achat": "2026-05-04",
-      "mise": 24.75,
-      "tp_cible": 656.467,
-      "sl_cible": 582.7758,
-      "atr_lors_achat": 18.4228,
       "atr_tp_mult": 2.5,
       "atr_sl_mult": 1.5
     }
@@ -113,18 +102,6 @@
       "frais": 0.03,
       "duree_jours": 10,
       "atr_lors_achat": 4.7636
-    },
-    {
-      "date": "2026-05-04",
-      "ticker": "META",
-      "action": "ACHAT",
-      "prix": 610.41,
-      "quantite": 0.040481,
-      "mise": 24.75,
-      "frais": 0.04,
-      "tp_cible": 656.467,
-      "sl_cible": 582.7758,
-      "atr": 18.4228
     }
   ],
   "valeur_historique": [
@@ -218,10 +195,6 @@
     },
     {
       "date": "2026-05-01",
-      "valeur": 1030.06
-    },
-    {
-      "date": "2026-05-04",
       "valeur": 1030.06
     }
   ],
