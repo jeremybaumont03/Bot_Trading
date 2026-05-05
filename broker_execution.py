@@ -2,7 +2,7 @@
 🏦 BROKER EXECUTION V6 APEX — FINAL CORRIGÉ
 Corrections :
   ✅ FX Fix : values.flatten()[-1] pour éviter l'erreur numpy.float64
-  ✅ TimeInForce.GTC : Les ordres s'exécutent à l'ouverture du lendemain
+  ✅ Fix Alpaca : TimeInForce.DAY obligatoire pour les fractions d'actions
   ✅ Crypto Shield conservé
   ✅ Timeout 45s conservé
   ✅ Rapport Telegram conservé
@@ -78,7 +78,7 @@ def send_telegram_summary():
     mode_txt = "🟡 PAPER (Argent virtuel Alpaca)" if IS_PAPER else "🔴 LIVE (Vrai argent)"
     exec_txt = "ACTIF" if LIVE_EXECUTION else "DRY RUN"
     log_text = "\n".join(SESSION_LOGS[-30:])
-    message  = f"🏦 *HEDGE FUND V6 APEX*\n_{mode_txt} | Exec: {exec_txt}_\n\n```\n{log_text}\n```"
+    message  = f"🏦 *HEDGE FUND V6 APEX*\n_{mode_txt} | Exec: {exec_txt}_\n\n```text\n{log_text}\n```"
     try:
         requests.post(
             f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
@@ -115,10 +115,6 @@ def get_market_context():
 
 # ── 5. TAUX EUR/USD (✅ Fix numpy.float64) ────────────────────────────────────
 def get_eurusd_rate():
-    """
-    ✅ Fix : .values.flatten()[-1] évite l'erreur
-    'numpy.float64 object has no attribute iloc'
-    """
     check_timeout()
     try:
         df = yf.download("EURUSD=X", period="2d", progress=False)
@@ -260,19 +256,17 @@ def execute_trades():
                     symbol=alpaca_symbol,
                     notional=notional_str,
                     side=side,
-                    # ✅ FIX : GTC au lieu de DAY
-                    # DAY = expire si marché fermé (après 21h UTC)
-                    # GTC = s'exécute à l'ouverture du lendemain matin
-                    time_in_force=TimeInForce.GTC
+                    # ✅ FIX ALPACA : DAY obligatoire pour acheter un montant exact en $
+                    time_in_force=TimeInForce.DAY
                 )
                 submitted = trading_client.submit_order(order_data=order)
-                log_action(f"⚡ ORDER : {side.name} ${notional_str} de {alpaca_symbol} (GTC)")
+                log_action(f"⚡ ORDER : {side.name} ${notional_str} de {alpaca_symbol} (DAY)")
                 pending_verifications.append((alpaca_symbol, trade_amount, submitted.id))
                 orders_sent += 1
             except Exception as e:
                 log_action(f"❌ ECHEC {alpaca_symbol} : {e}")
         else:
-            log_action(f"[DRY RUN] {side.name} ${notional_str} de {alpaca_symbol} (GTC)")
+            log_action(f"[DRY RUN] {side.name} ${notional_str} de {alpaca_symbol} (DAY)")
 
     # ── PHASE 3 : Vérification ────────────────────────────────────────────────
     if LIVE_EXECUTION and pending_verifications:
@@ -282,9 +276,8 @@ def execute_trades():
             check_timeout()
             try:
                 status = trading_client.get_order_by_id(order_id)
-                # GTC = ACCEPTED est normal après clôture — pas une erreur
                 emoji = "✅" if status.status == "filled" else "⏳"
-                log_action(f"{emoji} {symbol} : {status.status} (GTC — s'exécutera à l'ouverture)")
+                log_action(f"{emoji} {symbol} : {status.status} (Sera exécuté à l'ouverture si ACCEPTED)")
             except Exception as e:
                 log_action(f"⚠️ Vérification impossible {symbol} : {e}")
 
